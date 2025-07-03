@@ -10,10 +10,13 @@ from numpyro.distributions import constraints
 import numpyro.distributions as dist
 from numpyro.infer.autoguide import AutoGuide
 from numpyro.infer.initialization import init_to_sample
+from numpyro.infer import Predictive
 from numpyro.infer.util import log_density
 from pytrie import SortedStringTrie as Trie
-from typing import Tuple
+from typing import Any, Dict, Tuple
 
+from src.inference import AutoLangevin
+from src.utils import uncondition
 from .svi import SviPara
 
 class ParameterParticles:
@@ -78,107 +81,93 @@ class ParameterParticles:
             self.parameters[k] = v
         return self
 
-class AutoLangevin(AutoGuide):
-    def __init__(self, model, *, create_plates=None, lr=1e-3, prefix="auto"):
-        self._event_dims = {}
-        self._grad_log_densities = {}
-        self._lr = 1e-3
-        super().__init__(model, init_loc_fn=init_to_sample, prefix=prefix,
-                         create_plates=create_plates)
+class LangevinPara(SviPara):
+    def __init__(self, data_shape, lr, model, num_particles, rng, guide=None,
+                 lrq=1e-4):
+        super().__init__(data_shape, AutoLangevin(model, lr=lr), lr, model,
+                         num_particles, rng)
+        self._particles = ParameterParticles(data_shape[0], num_particles)
 
-    def _setup_prototype(self, *args, **kwargs):
-        super()._setup_prototype(*args, **kwargs)
+    def __call__(self, data, targets, indices):
+        for site in self.svi.guide.prototype_trace:
+            if site not in self._particles.parameters:
+                continue
+            mutable = "{}_{}_loc".format(site, self.svi.guide.prefix)
+            self.svi_state.mutable_state[mutable]["value"] =\
+                self._particles.get_parameters(indices, site)
 
-        for name, site in self.prototype_trace.items():
+        params = {**self.svi.get_params(self.svi_state),
+                  **self.svi_state.mutable_state}
+        predictive = Predictive(
+            uncondition(self.svi.model), guide=self.svi.guide,
+            num_samples=1, batch_ndims=None, parallel=False, params=params
+        )
+        return predictive(self.svi_state.rng_key, data)
+
+    def load(self, checkpoint: Dict[str, Any]):
+        super(LangevinPara, self).load(checkpoint)
+        self._particles = ParameterParticles.unpickle(checkpoint["particles"])
+
+    def save(self):
+        return {"particles": self._particles.pickle(),
+                "svi_state": self.svi_state}
+
+    def train_step(self, data, target, indices):
+        for site in self.svi.guide.prototype_trace:
+            if site not in self._particles.parameters:
+                continue
+            mutable = "{}_{}_loc".format(site, self.svi.guide.prefix)
+            self.svi_state.mutable_state[mutable]["value"] =\
+                self._particles.get_parameters(indices, site)
+
+        self.svi_state, loss = self.svi_update(self.svi, self.svi_state, data)
+
+        for name, site in self.svi.guide.prototype_trace.items():
             if site["type"] != "sample" or site["is_observed"]:
                 continue
-
-            event_dim = (
-                site["fn"].event_dim
-                + jnp.ndim(self._init_locs[name])
-                - jnp.ndim(site["value"])
+            mutable = "{}_{}_loc".format(name, self.svi.guide.prefix)
+            self._particles.set_parameters(
+                indices, name, self.svi_state.mutable_state[mutable]["value"]
             )
-            self._event_dims[name] = event_dim
 
-            # If subsampling, repeat init_value to full size.
-            for frame in site["cond_indep_stack"]:
-                full_size = self._prototype_frame_full_sizes[frame.name]
-                if full_size != frame.size:
-                    dim = frame.dim - event_dim
-                    self._init_locs[name] = periodic_repeat(
-                        self._init_locs[name], full_size, dim
-                    )
+        return {"loss": loss}
 
-            def varwise_log_density(val, *args, __site__=None, **kwargs):
-                params = {
-                    n: val if n == __site__ else site["value"] for (n, site)
-                       in self.prototype_trace.items()
-                       if site["type"] == "sample"
-                }
-                with numpyro.handlers.block(lambda site: True):
-                    return log_density(self.model, args, kwargs, params)[0]
-            self._grad_log_densities[name] = jax.grad(functools.partial(
-                varwise_log_density, __site__=name
-            ))
+    def test_step(self, data, target, indices):
+        for site in self.svi.guide.prototype_trace:
+            if site not in self._particles.parameters:
+                continue
+            mutable = "{}_{}_loc".format(site, self.svi.guide.prefix)
+            self.svi_state.mutable_state[mutable]["value"] =\
+                self._particles.get_parameters(indices, site)
 
-    def __call__(self, *args, **kwargs):
-        if self.prototype_trace is None:
-            # run model to inspect the model structure
-            self._setup_prototype(*args, **kwargs)
+        self.svi_state, loss = self.svi_evaluate(self.svi, self.svi_state, data)
 
-        plates = self._create_plates(*args, **kwargs)
-        result = {}
-        for name, site in self.prototype_trace.items():
+        for name, site in self.svi.guide.prototype_trace.items():
             if site["type"] != "sample" or site["is_observed"]:
                 continue
+            mutable = "{}_{}_loc".format(name, self.svi.guide.prefix)
+            self._particles.set_parameters(
+                indices, name, self.svi_state.mutable_state[mutable]["value"]
+            )
 
-            event_dim = self._event_dims[name]
-            init_loc = self._init_locs[name]
-            with ExitStack() as stack:
-                for frame in site["cond_indep_stack"]:
-                    stack.enter_context(plates[frame.name])
+        return {"loss": loss}
 
-                site_loc = numpyro.primitives.mutable(
-                    "{}_{}_loc".format(name, self.prefix), {"value": init_loc}
-                )
-                update = self._grad_log_densities[name](site_loc["value"],
-                                                        *args, **kwargs)
+    def valid_step(self, data, target, indices):
+        for site in self.svi.guide.prototype_trace:
+            if site not in self._particles.parameters:
+                continue
+            mutable = "{}_{}_loc".format(site, self.svi.guide.prefix)
+            self.svi_state.mutable_state[mutable]["value"] =\
+                self._particles.get_parameters(indices, site)
 
-                site_fn = dist.Normal(site_loc["value"] + self._lr * update,
-                                      math.sqrt(2 * self._lr)).to_event(event_dim)
-                if site["fn"].support is constraints.real or (
-                    isinstance(site["fn"].support, constraints.independent)
-                    and site["fn"].support.base_constraint is constraints.real
-                ):
-                    result[name] = numpyro.sample(name, site_fn)
-                else:
-                    with helpful_support_errors(site):
-                        transform = biject_to(site["fn"].support)
-                    guide_dist = dist.TransformedDistribution(site_fn, transform)
-                    result[name] = numpyro.sample(name, guide_dist)
+        self.svi_state, loss = self.svi_evaluate(self.svi, self.svi_state, data)
 
-                site_loc["value"] = result[name]
+        for name, site in self.svi.guide.prototype_trace.items():
+            if site["type"] != "sample" or site["is_observed"]:
+                continue
+            mutable = "{}_{}_loc".format(name, self.svi.guide.prefix)
+            self._particles.set_parameters(
+                indices, name, self.svi_state.mutable_state[mutable]["value"]
+            )
 
-        return result
-
-    def sample_posterior(self, rng_key, params, *args, sample_shape=(),
-                         **kwargs):
-        samples = {}
-        with numpyro.infer.handlers.seed(rng_seed=rng_key):
-            for site in self.prototype_trace:
-                if site["type"] != "sample" or site["is_observed"]:
-                    continue
-
-                init_loc = self._init_locs[site]
-                site_loc = numpyro.primitives.mutable(
-                    "{}_{}_loc".format(name, self.prefix), {"value": init_loc}
-                )
-                update = self._grad_log_densities[name](site_loc["value"],
-                                                        *args, **kwargs)
-                loc = site_loc + self._lr * update
-                density = dist.Normal(loc, (2 * self._lr).sqrt())
-                samples[site] = numpyro.sample(site,
-                                               density.expand_by(sample_shape))
-                site_loc["value"] = samples[site]
-
-        return self._constrain(samples)
+        return {"loss": loss}
