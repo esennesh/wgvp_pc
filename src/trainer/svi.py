@@ -17,7 +17,8 @@ class SviPara(ParaMonad):
         self.num_particles = num_particles
         self.svi = SVI(model, guide, self.optimizer,
                        Trace_ELBO(num_particles))
-        self.svi_state = self.svi.init(rng, jnp.zeros((1,) + data_shape))
+        self.svi_state = self.svi.init(rng,
+                                       jnp.zeros((1,) + tuple(data_shape[1:])))
 
     def __call__(self, *args, **kwargs):
         predictive = Predictive(
