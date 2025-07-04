@@ -41,6 +41,8 @@ class SviPara(ParaMonad):
     def setup_step(self, data, *args):
         if self.svi_state is None:
             self.svi_state = self.svi.init(self._rng, data)
+        else:
+            self.svi.init(self.svi_state.rng_key, data)
 
     @staticmethod
     @partial(jit, static_argnums=0)
