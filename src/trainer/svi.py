@@ -2,11 +2,12 @@ from functools import partial
 from jax import Array, jit
 import jax.numpy as jnp
 import jax.random as random
-from numpyro.infer import Predictive, SVI, Trace_ELBO
+from numpyro.infer import Predictive, SVI
 import numpyro
 from typing import Any, Dict
 
 from .para import ParaMonad
+from src.inference.elbo import TraceVectorized_ELBO
 from src.utils import uncondition
 
 class SviPara(ParaMonad):
@@ -17,7 +18,7 @@ class SviPara(ParaMonad):
         self.num_particles = num_particles
         self._rng = rng
         self.svi = SVI(model, guide, self.optimizer,
-                       Trace_ELBO(num_particles))
+                       TraceVectorized_ELBO(num_particles))
         self.svi_state = None
 
     def __call__(self, *args, **kwargs):
