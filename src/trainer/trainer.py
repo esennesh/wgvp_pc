@@ -143,6 +143,10 @@ class Trainer:
 
         dataloader = datamodule.valid_dataloader() if valid else\
                      datamodule.test_dataloader()
+        for batch in dataloader:
+            monad.setup_step(*batch)
+            break
+
         metrics = defaultdict(lambda: [])
         for batch_idx, batch in enumerate(dataloader):
             for k, v in monad.valid_step(*batch).items():
