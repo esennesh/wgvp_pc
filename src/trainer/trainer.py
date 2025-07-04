@@ -143,9 +143,10 @@ class Trainer:
 
         dataloader = datamodule.valid_dataloader() if valid else\
                      datamodule.test_dataloader()
-        for batch in dataloader:
-            monad.setup_step(*batch)
-            break
+        if ckpt_path is None:
+            for batch in dataloader:
+                monad.setup_step(*batch)
+                break
 
         metrics = defaultdict(lambda: [])
         for batch_idx, batch in enumerate(dataloader):
@@ -164,6 +165,10 @@ class Trainer:
         not_improved_count = 0
         train_dataloader = datamodule.train_dataloader()
         valid_dataloader = datamodule.valid_dataloader()
+        for batch in train_dataloader:
+            monad.setup_step(*batch)
+            break
+
         for epoch in range(self.epoch, self.epochs + 1):
             train_result = self._train_epoch(monad, train_dataloader, epoch)
             valid_result = {}
