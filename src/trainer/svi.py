@@ -15,10 +15,10 @@ class SviPara(ParaMonad):
             rng = random.key(rng)
         self.optimizer = numpyro.optim.Adam(step_size=lr)
         self.num_particles = num_particles
+        self._rng = rng
         self.svi = SVI(model, guide, self.optimizer,
                        Trace_ELBO(num_particles))
-        self.svi_state = self.svi.init(rng,
-                                       jnp.zeros((1,) + tuple(data_shape[1:])))
+        self.svi_state = None
 
     def __call__(self, *args, **kwargs):
         predictive = Predictive(
@@ -37,6 +37,10 @@ class SviPara(ParaMonad):
 
     def save(self):
         return {"svi_state": self.svi_state}
+
+    def setup_step(self, data, *args):
+        if self.svi_state is None:
+            self.svi_state = self.svi.init(self._rng, data)
 
     @staticmethod
     @partial(jit, static_argnums=0)
