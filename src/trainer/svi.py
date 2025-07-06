@@ -3,7 +3,7 @@ from jax import Array, jit
 import jax.numpy as jnp
 import jax.random as random
 from numpyro.infer import Predictive, SVI, Trace_ELBO
-from numpyro import optim
+import numpyro
 from typing import Any, Dict
 
 from .para import ParaMonad
@@ -13,7 +13,7 @@ class SviPara(ParaMonad):
     def __init__(self, data_shape, guide, lr, model, num_particles, rng):
         if not isinstance(rng, Array):
             rng = random.key(rng)
-        self.optimizer = optim.Adam(step_size=lr)
+        self.optimizer = numpyro.optim.Adam(step_size=lr)
         self.num_particles = num_particles
         self.svi = SVI(model, guide, self.optimizer,
                        Trace_ELBO(num_particles))
