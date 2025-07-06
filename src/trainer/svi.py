@@ -47,7 +47,14 @@ class SviPara(ParaMonad):
     @staticmethod
     @partial(jit, static_argnums=0)
     def svi_evaluate(svi, state, data):
-        return svi.evaluate(state, data)
+        rng_key, rng_key_eval = random.split(state.rng_key)
+        loss_fn = numpyro.infer.svi._make_loss_fn(
+            svi.loss, rng_key_eval, svi.constrain_fn, svi.model, svi.guide,
+            (data,), {}, svi.static_kwargs, mutable_state=state.mutable_state
+        )
+        loss, mutable_state = loss_fn(svi.get_params(state))
+        return (numpyro.infer.svi.SVIState(state.optim_state, mutable_state,
+                                           rng_key), loss)
 
     @staticmethod
     @partial(jit, static_argnums=0)
@@ -55,11 +62,13 @@ class SviPara(ParaMonad):
         return svi.update(state, data)
 
     def test_step(self, data, *args):
-        return {"loss": self.svi_evaluate(self.svi, self.svi_state, data)}
+        self.svi_state, loss = self.svi_evaluate(self.svi, self.svi_state, data)
+        return {"loss": loss}
 
     def train_step(self, data, *args):
         self.svi_state, loss = self.svi_update(self.svi, self.svi_state, data)
         return {"loss": loss}
 
     def valid_step(self, data, *args) -> Dict[str, float]:
-        return {"loss": self.svi_evaluate(self.svi, self.svi_state, data)}
+        self.svi_state, loss = self.svi_evaluate(self.svi, self.svi_state, data)
+        return {"loss": loss}
