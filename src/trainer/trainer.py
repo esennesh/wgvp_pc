@@ -217,7 +217,7 @@ class Trainer:
         """
 
         self.valid_metrics.reset()
-        for batch_idx, batch in track(enumerate(data_loader),
+        for batch_idx, batch in track(enumerate(data_loader), auto_refresh=False,
                                       description="Validating (Epoch %d)" % epoch,
                                       total=len(data_loader), transient=True):
             metrics = monad.valid_step(*batch)
