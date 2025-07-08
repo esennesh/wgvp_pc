@@ -10,3 +10,6 @@ epochs: 1000
 
 # perform a validation loop every N training epochs
 check_val_every_n_epoch: 1
+
+# save a checkpoint every N training epochs
+save_period: 50
