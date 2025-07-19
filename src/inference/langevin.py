@@ -15,10 +15,10 @@ from pytrie import SortedStringTrie as Trie
 from typing import Tuple
 
 class AutoLangevin(AutoGuide):
-    def __init__(self, model, *, create_plates=None, lr=1e-3, prefix="auto"):
+    def __init__(self, model, *, create_plates=None, lr=1e-4, prefix="auto"):
         self._event_dims = {}
         self._grad_log_densities = {}
-        self._lr = 1e-3
+        self._lr = lr
         super().__init__(model, init_loc_fn=init_to_sample, prefix=prefix,
                          create_plates=create_plates)
 
