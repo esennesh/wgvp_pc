@@ -1,6 +1,6 @@
 _target_: src.trainer.LangevinPara
 
-lr: 0.01
-lrq: 0.0001
+lr: 1e-2
+lrq: 1e-4
 num_particles: 4
 rng: 123
