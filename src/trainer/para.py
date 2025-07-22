@@ -19,6 +19,10 @@ class ParaMonad:
         raise NotImplementedError
 
     @abstractmethod
+    def setup_step(self, *args, **kwargs):
+        raise NotImplementedError
+
+    @abstractmethod
     def test_step(self, *args, **kwargs) -> Dict[str, float]:
         raise NotImplementedError
 

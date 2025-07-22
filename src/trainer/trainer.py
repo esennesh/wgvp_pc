@@ -124,7 +124,7 @@ class Trainer:
         else:
             log_step = self.log_step
         self.train_metrics.reset()
-        for batch_idx, batch in track(enumerate(data_loader),
+        for batch_idx, batch in track(enumerate(data_loader), auto_refresh=False,
                                       description="Training (Epoch %d)" % epoch,
                                       total=len(data_loader), transient=True):
             metrics = monad.train_step(*batch)
@@ -143,6 +143,11 @@ class Trainer:
 
         dataloader = datamodule.valid_dataloader() if valid else\
                      datamodule.test_dataloader()
+        if ckpt_path is None:
+            for batch in dataloader:
+                monad.setup_step(*batch)
+                break
+
         metrics = defaultdict(lambda: [])
         for batch_idx, batch in enumerate(dataloader):
             for k, v in monad.valid_step(*batch).items():
@@ -160,6 +165,10 @@ class Trainer:
         not_improved_count = 0
         train_dataloader = datamodule.train_dataloader()
         valid_dataloader = datamodule.valid_dataloader()
+        for batch in train_dataloader:
+            monad.setup_step(*batch)
+            break
+
         for epoch in range(self.epoch, self.epochs + 1):
             train_result = self._train_epoch(monad, train_dataloader, epoch)
             valid_result = {}
@@ -208,7 +217,7 @@ class Trainer:
         """
 
         self.valid_metrics.reset()
-        for batch_idx, batch in track(enumerate(data_loader),
+        for batch_idx, batch in track(enumerate(data_loader), auto_refresh=False,
                                       description="Validating (Epoch %d)" % epoch,
                                       total=len(data_loader), transient=True):
             metrics = monad.valid_step(*batch)

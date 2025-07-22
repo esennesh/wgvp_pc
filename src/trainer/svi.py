@@ -2,22 +2,24 @@ from functools import partial
 from jax import Array, jit
 import jax.numpy as jnp
 import jax.random as random
-from numpyro.infer import Predictive, SVI, Trace_ELBO
-from numpyro import optim
+from numpyro.infer import Predictive, SVI
+import numpyro
 from typing import Any, Dict
 
 from .para import ParaMonad
+from src.inference.elbo import TraceVectorized_ELBO
 from src.utils import uncondition
 
 class SviPara(ParaMonad):
     def __init__(self, data_shape, guide, lr, model, num_particles, rng):
         if not isinstance(rng, Array):
             rng = random.key(rng)
-        self.optimizer = optim.Adam(step_size=lr)
+        self.optimizer = numpyro.optim.Adam(step_size=lr)
         self.num_particles = num_particles
+        self._rng = rng
         self.svi = SVI(model, guide, self.optimizer,
-                       Trace_ELBO(num_particles))
-        self.svi_state = self.svi.init(rng, jnp.zeros((1,) + data_shape))
+                       TraceVectorized_ELBO(num_particles))
+        self.svi_state = None
 
     def __call__(self, *args, **kwargs):
         predictive = Predictive(
@@ -37,10 +39,23 @@ class SviPara(ParaMonad):
     def save(self):
         return {"svi_state": self.svi_state}
 
+    def setup_step(self, data, *args):
+        if self.svi_state is None:
+            self.svi_state = self.svi.init(self._rng, data)
+        else:
+            self.svi.init(self.svi_state.rng_key, data)
+
     @staticmethod
     @partial(jit, static_argnums=0)
     def svi_evaluate(svi, state, data):
-        return svi.evaluate(state, data)
+        rng_key, rng_key_eval = random.split(state.rng_key)
+        loss_fn = numpyro.infer.svi._make_loss_fn(
+            svi.loss, rng_key_eval, svi.constrain_fn, svi.model, svi.guide,
+            (data,), {}, svi.static_kwargs, mutable_state=state.mutable_state
+        )
+        loss, mutable_state = loss_fn(svi.get_params(state))
+        return (numpyro.infer.svi.SVIState(state.optim_state, mutable_state,
+                                           rng_key), loss)
 
     @staticmethod
     @partial(jit, static_argnums=0)
@@ -48,11 +63,13 @@ class SviPara(ParaMonad):
         return svi.update(state, data)
 
     def test_step(self, data, *args):
-        return {"loss": self.svi_evaluate(self.svi, self.svi_state, data)}
+        self.svi_state, loss = self.svi_evaluate(self.svi, self.svi_state, data)
+        return {"loss": loss}
 
     def train_step(self, data, *args):
         self.svi_state, loss = self.svi_update(self.svi, self.svi_state, data)
         return {"loss": loss}
 
     def valid_step(self, data, *args) -> Dict[str, float]:
-        return {"loss": self.svi_evaluate(self.svi, self.svi_state, data)}
+        self.svi_state, loss = self.svi_evaluate(self.svi, self.svi_state, data)
+        return {"loss": loss}

@@ -15,6 +15,7 @@ class MnistDataModule(datamodule.DataModule):
             transforms.Lambda(lambda x: x.reshape(1, 28, 28)),
             transforms.Lambda(lambda x: np.round(x, decimals=0))
         ])
+        self.num_data = 0
 
         super().__init__(*args, **kwargs)
 
@@ -23,8 +24,9 @@ class MnistDataModule(datamodule.DataModule):
                                     transform=self.transforms)
         data_test = datasets.MNIST(self.data_dir, train=False, download=True,
                                    transform=self.transforms)
+        self.num_data += len(data_train) + len(data_test)
         return data_train, data_test
 
     @property
     def shape(self) -> Tuple:
-        return (1, 28, 28)
+        return (self.num_data, 1, 28, 28)

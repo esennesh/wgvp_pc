@@ -1,7 +1,9 @@
 import argparse
 import collections
 import hydra
+import jax
 import logging
+import numpyro
 from numpyro import optim
 from omegaconf import DictConfig
 import os
@@ -58,7 +60,13 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
 
     if cfg.get("train"):
         log.info("Starting training!")
-        trainer.train(monad, datamodule, ckpt_path=cfg.get("ckpt_path"))
+        if cfg.get("debug", False):
+            numpyro.enable_validation()
+            jax.config.update("jax_debug_nans", True)
+            with jax.disable_jit():
+                trainer.train(monad, datamodule, ckpt_path=cfg.get("ckpt_path"))
+        else:
+            trainer.train(monad, datamodule, ckpt_path=cfg.get("ckpt_path"))
 
     train_metrics = trainer.train_metrics.result()
 
