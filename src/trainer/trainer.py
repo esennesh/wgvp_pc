@@ -112,7 +112,7 @@ class Trainer:
             np.save(best_path, state, allow_pickle=True)
             self.logger.info("Saving current best: model_best ...")
 
-    def _train_epoch(self, monad, data_loader, epoch):
+    def _train_epoch(self, monad, data_loader, mutables, epoch):
         """
         Training logic for an epoch
 
@@ -127,12 +127,17 @@ class Trainer:
         for batch_idx, batch in track(enumerate(data_loader), auto_refresh=False,
                                       description="Training (Epoch %d)" % epoch,
                                       total=len(data_loader), transient=True):
-            metrics = monad.train_step(*batch)
+            if mutables:
+                indices = batch[-1]
+                batch = (*batch, mutables.get_parameters(indices))
+            metrics, mutable_updates = monad.train_step(*batch)
             loss = metrics['loss'].item()
 
             self.writer.set_step(epoch * len(data_loader) + batch_idx)
             for met in self.metrics:
                 self.train_metrics.update(met, metrics[met])
+            if mutables:
+                mutables.set_parameters(indices, mutable_updates)
 
         return self.train_metrics.result()
 
@@ -143,6 +148,8 @@ class Trainer:
 
         dataloader = datamodule.valid_dataloader() if valid else\
                      datamodule.test_dataloader()
+        mutables = datamodule.valid_mutables if valid else\
+                   datamodule.test_mutables
         if ckpt_path is None:
             for batch in dataloader:
                 monad.setup_step(*batch)
@@ -150,8 +157,14 @@ class Trainer:
 
         metrics = defaultdict(lambda: [])
         for batch_idx, batch in enumerate(dataloader):
-            for k, v in monad.valid_step(*batch).items():
+            if mutables:
+                indices = batch[-1]
+                batch = (*batch, mutables.get_parameters(indices))
+            metrics, mutable_updates = monad.valid_step(*batch)
+            for k, v in metrics.items():
                 metrics[k].append(v)
+            if mutables:
+                mutables.set_parameters(indices, mutable_updates)
         return {k: np.mean(vs) for k, vs in metrics.items()}
 
     def train(self, monad: ParaMonad, datamodule: DataModule,
@@ -170,10 +183,12 @@ class Trainer:
             break
 
         for epoch in range(self.epoch, self.epochs + 1):
-            train_result = self._train_epoch(monad, train_dataloader, epoch)
+            train_result = self._train_epoch(monad, train_dataloader,
+                                             datamodule.train_mutables, epoch)
             valid_result = {}
             if self.validate:
-                valid_result = self._valid_epoch(monad, valid_dataloader, epoch)
+                valid_result = self._valid_epoch(monad, valid_dataloader,
+                                                 datamodule.valid_mutables, epoch)
 
             # save logged information into log dict
             log = {'epoch': epoch}
@@ -208,7 +223,7 @@ class Trainer:
             if epoch % self.save_period == 0:
                 self._save_checkpoint(monad, epoch, save_best=best)
 
-    def _valid_epoch(self, monad, data_loader, epoch):
+    def _valid_epoch(self, monad, data_loader, mutables, epoch):
         """
         Validate after training an epoch
 
@@ -220,12 +235,17 @@ class Trainer:
         for batch_idx, batch in track(enumerate(data_loader), auto_refresh=False,
                                       description="Validating (Epoch %d)" % epoch,
                                       total=len(data_loader), transient=True):
-            metrics = monad.valid_step(*batch)
+            if mutables:
+                indices = batch[-1]
+                batch = (*batch, mutables.get_parameters(indices))
+            metrics, mutable_updates = monad.valid_step(*batch)
             loss = metrics['loss'].item()
 
             self.writer.set_step(epoch * len(data_loader) + batch_idx, 'valid')
             for met in self.metrics:
                 self.valid_metrics.update(met, metrics[met])
+            if mutables:
+                mutables.set_parameters(indices, mutable_updates)
 
         # add histogram of parameters to the tensorboard
         parameters = monad.parameters
