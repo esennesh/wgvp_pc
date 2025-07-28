@@ -86,15 +86,13 @@ class LangevinPara(SviPara):
                  lrq=1e-4):
         super().__init__(data_shape, AutoLangevin(model, lr=lrq), lr, model,
                          num_particles, rng)
-        self._particles = ParameterParticles(data_shape[0], num_particles)
 
-    def __call__(self, data, targets, indices):
+    def __call__(self, data, targets, indices, mutables):
         for site in self.svi.guide.prototype_trace:
             if site not in self._particles.parameters:
                 continue
             mutable = "{}_{}_loc".format(site, self.svi.guide.prefix)
-            self.svi_state.mutable_state[mutable]["value"] =\
-                self._particles.get_parameters(indices, site)
+            self.svi_state.mutable_state[mutable]["value"] = mutables[site]
 
         params = {**self.svi.get_params(self.svi_state),
                   **self.svi_state.mutable_state}
@@ -104,21 +102,12 @@ class LangevinPara(SviPara):
         )
         return predictive(self.svi_state.rng_key, data)
 
-    def load(self, checkpoint: Dict[str, Any]):
-        super(LangevinPara, self).load(checkpoint)
-        self._particles = ParameterParticles.unpickle(checkpoint["particles"])
-
-    def save(self):
-        return {"particles": self._particles.pickle(),
-                "svi_state": self.svi_state}
-
-    def train_step(self, data, target, indices):
+    def train_step(self, data, target, indices, mutables={}):
         for site in self.svi.guide.prototype_trace:
-            if site not in self._particles.parameters:
+            if site not in mutables:
                 continue
             mutable = "{}_{}_loc".format(site, self.svi.guide.prefix)
-            self.svi_state.mutable_state[mutable]["value"] =\
-                self._particles.get_parameters(indices, site)
+            self.svi_state.mutable_state[mutable]["value"] = mutables[site]
 
         self.svi_state, loss = self.svi_update(self.svi, self.svi_state, data)
 
@@ -126,19 +115,16 @@ class LangevinPara(SviPara):
             if site["type"] != "sample" or site["is_observed"]:
                 continue
             mutable = "{}_{}_loc".format(name, self.svi.guide.prefix)
-            self._particles.set_parameters(
-                indices, name, self.svi_state.mutable_state[mutable]["value"]
-            )
+            mutables[name] = self.svi_state.mutable_state[mutable]["value"]
 
-        return {"loss": loss}
+        return {"loss": loss}, mutables
 
-    def test_step(self, data, target, indices):
+    def test_step(self, data, target, indices, mutables={}):
         for site in self.svi.guide.prototype_trace:
             if site not in self._particles.parameters:
                 continue
             mutable = "{}_{}_loc".format(site, self.svi.guide.prefix)
-            self.svi_state.mutable_state[mutable]["value"] =\
-                self._particles.get_parameters(indices, site)
+            self.svi_state.mutable_state[mutable]["value"] = mutables[site]
 
         self.svi_state, loss = self.svi_evaluate(self.svi, self.svi_state, data)
 
@@ -146,19 +132,16 @@ class LangevinPara(SviPara):
             if site["type"] != "sample" or site["is_observed"]:
                 continue
             mutable = "{}_{}_loc".format(name, self.svi.guide.prefix)
-            self._particles.set_parameters(
-                indices, name, self.svi_state.mutable_state[mutable]["value"]
-            )
+            mutables[name] = self.svi_state.mutable_state[mutable]["value"]
 
-        return {"loss": loss}
+        return {"loss": loss}, mutables
 
-    def valid_step(self, data, target, indices):
+    def valid_step(self, data, target, indices, mutables={}):
         for site in self.svi.guide.prototype_trace:
             if site not in self._particles.parameters:
                 continue
             mutable = "{}_{}_loc".format(site, self.svi.guide.prefix)
-            self.svi_state.mutable_state[mutable]["value"] =\
-                self._particles.get_parameters(indices, site)
+            self.svi_state.mutable_state[mutable]["value"] = mutables[site]
 
         self.svi_state, loss = self.svi_evaluate(self.svi, self.svi_state, data)
 
@@ -166,8 +149,6 @@ class LangevinPara(SviPara):
             if site["type"] != "sample" or site["is_observed"]:
                 continue
             mutable = "{}_{}_loc".format(name, self.svi.guide.prefix)
-            self._particles.set_parameters(
-                indices, name, self.svi_state.mutable_state[mutable]["value"]
-            )
+            mutables[name] = self.svi_state.mutable_state[mutable]["value"]
 
-        return {"loss": loss}
+        return {"loss": loss}, mutables
