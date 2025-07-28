@@ -80,9 +80,9 @@ class DataModule:
     Base class for all data modules
     """
     def __init__(self, batch_size: int=64, data_dir: str="data/", drop_last=False,
-                 collate_fn=numpy_collate, indexed: bool=False,
-                 num_workers: int=1, pin_memory: bool=False, shuffle: bool=True,
-                 validation_split: float=0.1):
+                 collate_fn=numpy_collate, indexed: bool=False, idx_dim=1,
+                 mutables=False, num_workers: int=1, pin_memory: bool=False,
+                 shuffle: bool=True, validation_split: float=0.1):
         self.data_dir = data_dir
         self.validation_split = validation_split
         data_train, data_test = self.prepare_data()
@@ -91,6 +91,14 @@ class DataModule:
             data_test = IndexedDataset(data_test)
         self.data_train, self.data_val, self.data_test =\
             self.setup(data_train, data_test, validation_split)
+        if mutables:
+            assert indexed
+            self.train_mutables = DataMutables(len(self.data_train), idx_dim)
+            self.valid_mutables = DataMutables(len(self.data_val), idx_dim)
+            self.test_mutables = DataMutables(len(self.data_test), idx_dim)
+        else:
+            self.train_mutables, self.valid_mutables, self.test_mutables =\
+                (None, None, None)
 
         self.dataloader_kwargs = {
             'batch_size': batch_size,
