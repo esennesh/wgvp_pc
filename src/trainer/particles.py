@@ -84,7 +84,7 @@ class ParameterParticles:
 class LangevinPara(SviPara):
     def __init__(self, data_shape, lr, model, num_particles, rng, guide=None,
                  lrq=1e-4):
-        super().__init__(data_shape, AutoLangevin(model, lr=lr), lr, model,
+        super().__init__(data_shape, AutoLangevin(model, lr=lrq), lr, model,
                          num_particles, rng)
         self._particles = ParameterParticles(data_shape[0], num_particles)
 
