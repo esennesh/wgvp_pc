@@ -87,9 +87,12 @@ class LangevinPara(SviPara):
         super().__init__(data_shape, AutoLangevin(model, lr=lrq), lr, model,
                          num_particles, rng)
 
-    def __call__(self, data, targets, indices, mutables):
+    def __call__(self, data, targets, indices, mutables=None):
+        if mutables is None:
+            mutables = {}
+
         for site in self.svi.guide.prototype_trace:
-            if site not in self._particles.parameters:
+            if site not in mutables:
                 continue
             mutable = "{}_{}_loc".format(site, self.svi.guide.prefix)
             self.svi_state.mutable_state[mutable]["value"] = mutables[site]
@@ -102,7 +105,10 @@ class LangevinPara(SviPara):
         )
         return predictive(self.svi_state.rng_key, data)
 
-    def train_step(self, data, target, indices, mutables={}):
+    def train_step(self, data, target, indices, mutables=None):
+        if mutables is None:
+            mutables = {}
+
         for site in self.svi.guide.prototype_trace:
             if site not in mutables:
                 continue
@@ -119,9 +125,12 @@ class LangevinPara(SviPara):
 
         return {"loss": loss}, mutables
 
-    def test_step(self, data, target, indices, mutables={}):
+    def test_step(self, data, target, indices, mutables=None):
+        if mutables is None:
+            mutables = {}
+
         for site in self.svi.guide.prototype_trace:
-            if site not in self._particles.parameters:
+            if site not in mutables:
                 continue
             mutable = "{}_{}_loc".format(site, self.svi.guide.prefix)
             self.svi_state.mutable_state[mutable]["value"] = mutables[site]
@@ -136,9 +145,12 @@ class LangevinPara(SviPara):
 
         return {"loss": loss}, mutables
 
-    def valid_step(self, data, target, indices, mutables={}):
+    def valid_step(self, data, target, indices, mutables=None):
+        if mutables is None:
+            mutables = {}
+
         for site in self.svi.guide.prototype_trace:
-            if site not in self._particles.parameters:
+            if site not in mutables:
                 continue
             mutable = "{}_{}_loc".format(site, self.svi.guide.prefix)
             self.svi_state.mutable_state[mutable]["value"] = mutables[site]
