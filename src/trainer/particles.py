@@ -81,7 +81,7 @@ class ParameterParticles:
             self.parameters[k] = v
         return self
 
-class LangevinPara(SviPara):
+class PgdPara(SviPara):
     def __init__(self, data_shape, lr, model, num_particles, rng, guide=None,
                  lrq=1e-4):
         super().__init__(data_shape, AutoLangevin(model, lr=lrq), lr, model,
