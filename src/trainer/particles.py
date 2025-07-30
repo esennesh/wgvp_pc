@@ -100,8 +100,8 @@ class LangevinPara(SviPara):
         params = {**self.svi.get_params(self.svi_state),
                   **self.svi_state.mutable_state}
         predictive = Predictive(
-            uncondition(self.svi.model), guide=self.svi.guide,
-            num_samples=1, batch_ndims=None, parallel=False, params=params
+            uncondition(self.svi.model), guide=self.svi.guide, num_samples=1,
+            parallel=False, params=params
         )
         return predictive(self.svi_state.rng_key, data)
 
