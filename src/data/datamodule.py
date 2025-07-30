@@ -59,10 +59,10 @@ class DataMutables:
     def set_parameter(self, idx: np.ndarray, key: str, val: Array):
         self._require(key, val.shape)
         indices = idx.reshape((1, len(idx)) +\
-                              (1,) * len(val.shape[self._batch_dim+1:]))
+                              (1,) * len(val.shape[self._idx_dim+1:]))
         np.put_along_axis(self.mutables[key],
                           np.broadcast_to(indices, val.shape),
-                          np.array(val), self._batch_dim)
+                          np.array(val), self._idx_dim)
 
     def set_parameters(self, idx: np.ndarray, parameters: Dict[str, Array]):
         for key, val in parameters.items():
