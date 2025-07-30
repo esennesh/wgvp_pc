@@ -3,7 +3,7 @@ defaults:
   - data: mnist
   - guide: vae
   - model: vae
-  - monad: langevin
+  - monad: pgd
   - trainer: default
   - paths: default
   - extras: default
