@@ -1,4 +1,4 @@
-_target_: src.trainer.LangevinPara
+_target_: src.trainer.PgdPara
 
 lr: 1e-2
 lrq: 1e-4
