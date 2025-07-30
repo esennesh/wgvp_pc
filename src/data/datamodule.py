@@ -93,9 +93,8 @@ class DataModule:
             self.setup(data_train, data_test, validation_split)
         if mutables:
             assert indexed
-            self.train_mutables = DataMutables(len(self.data_train), idx_dim)
-            self.valid_mutables = DataMutables(len(self.data_val), idx_dim)
-            self.test_mutables = DataMutables(len(self.data_test), idx_dim)
+            self.train_mutables = DataMutables(len(data_train), idx_dim)
+            self.test_mutables = DataMutables(len(data_test), idx_dim)
         else:
             self.train_mutables, self.valid_mutables, self.test_mutables =\
                 (None, None, None)
@@ -112,6 +111,19 @@ class DataModule:
     @abstractmethod
     def prepare_data(self) -> Tuple[Dataset, Dataset]:
         raise NotImplementedError
+
+    def resume(self, checkpoint):
+        if self.train_mutables and self.test_mutables:
+            self.test_mutables =\
+                DataMutables.unpickle(checkpoint['test_mutables'])
+            self.train_mutables =\
+                DataMutables.unpickle(checkpoint['train_mutables'])
+
+    def save(self) -> Dict[str, Any]:
+        return {
+            "test_mutables": self.test_mutables.pickle(),
+            "train_mutables": self.train_mutables.pickle()
+        }
 
     @staticmethod
     def setup(train_data, test_data, validation_split) -> Tuple[Dataset, Dataset, Dataset]:
