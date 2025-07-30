@@ -152,9 +152,10 @@ class Trainer:
                      datamodule.test_dataloader()
         mutables = datamodule.train_mutables if valid else\
                    datamodule.test_mutables
-        for batch in dataloader:
-            monad.setup_step(*batch)
-            break
+        if ckpt_path is None:
+            for batch in dataloader:
+                monad.setup_step(*batch)
+                break
 
         metrics = defaultdict(lambda: [])
         for batch_idx, batch in enumerate(dataloader):
