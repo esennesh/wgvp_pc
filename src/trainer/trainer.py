@@ -71,7 +71,7 @@ class Trainer:
     def metric_fns(self) -> List[str]:
         raise NotImplementedError
 
-    def _resume_checkpoint(self, monad, resume_path):
+    def _resume_checkpoint(self, monad, datamodule, resume_path):
         """
         Resume from saved checkpoints
 
@@ -82,6 +82,7 @@ class Trainer:
         checkpoint = np.load(resume_path, allow_pickle=True).item()
         self.epoch = checkpoint['epoch'] + 1
         self.monitor_best = checkpoint['monitor_best']
+        datamodule.resume(checkpoint['datamodule'])
 
         try:
             monad.load(checkpoint)
@@ -91,7 +92,7 @@ class Trainer:
 
         self.logger.info("Checkpoint loaded. Resume training from epoch {}".format(self.epoch))
 
-    def _save_checkpoint(self, monad, epoch, save_best=False):
+    def _save_checkpoint(self, monad, datamodule, epoch, save_best=False):
         """
         Saving checkpoints
 
@@ -102,7 +103,8 @@ class Trainer:
         state = {
             'epoch': epoch,
             'monitor_best': self.monitor_best,
-            **monad.save()
+            **monad.save(),
+            'datamodule': datamodule.save()
         }
         filename = str(self.checkpoint_dir + '/checkpoint-epoch{}'.format(epoch))
         os.makedirs(self.checkpoint_dir, exist_ok=True)
@@ -144,11 +146,11 @@ class Trainer:
     def test(self, monad: ParaMonad, datamodule: DataModule,
              ckpt_path: Optional[str]=None, valid: bool=True):
         if ckpt_path is not None:
-            self._resume_checkpoint(monad, ckpt_path)
+            self._resume_checkpoint(monad, datamodule, ckpt_path)
 
         dataloader = datamodule.valid_dataloader() if valid else\
                      datamodule.test_dataloader()
-        mutables = datamodule.valid_mutables if valid else\
+        mutables = datamodule.train_mutables if valid else\
                    datamodule.test_mutables
         if ckpt_path is None:
             for batch in dataloader:
@@ -160,8 +162,8 @@ class Trainer:
             if mutables:
                 indices = batch[-1]
                 batch = (*batch, mutables.get_parameters(indices))
-            metrics, mutable_updates = monad.valid_step(*batch)
-            for k, v in metrics.items():
+            batch_metrics, mutable_updates = monad.valid_step(*batch)
+            for k, v in batch_metrics.items():
                 metrics[k].append(v)
             if mutables:
                 mutables.set_parameters(indices, mutable_updates)
@@ -173,7 +175,7 @@ class Trainer:
         Full training logic
         """
         if ckpt_path is not None:
-            self._resume_checkpoint(monad, ckpt_path)
+            self._resume_checkpoint(monad, datamodule, ckpt_path)
 
         not_improved_count = 0
         train_dataloader = datamodule.train_dataloader()
@@ -188,7 +190,8 @@ class Trainer:
             valid_result = {}
             if self.validate:
                 valid_result = self._valid_epoch(monad, valid_dataloader,
-                                                 datamodule.valid_mutables, epoch)
+                                                 datamodule.train_mutables,
+                                                 epoch)
 
             # save logged information into log dict
             log = {'epoch': epoch}
@@ -221,7 +224,7 @@ class Trainer:
                     break
 
             if epoch % self.save_period == 0:
-                self._save_checkpoint(monad, epoch, save_best=best)
+                self._save_checkpoint(monad, datamodule, epoch, save_best=best)
 
     def _valid_epoch(self, monad, data_loader, mutables, epoch):
         """
