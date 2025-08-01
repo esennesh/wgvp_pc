@@ -61,15 +61,29 @@ class TraceVectorized_ELBO(ELBO):
                      guide_log_probs.get(name, 0.0) for name in log_probs}
             if self.sum_sites:
                 elbos = sum(elbos.values(), start=0.0)
-            return elbos, mutable_params
+            reparameterized = [site["fn"].has_rsample for name, site in
+                               guide_trace.items() if site["type"] == "sample"]
+            reparameterized = reparameterized + [site["fn"].has_rsample
+                                                 for name, site in
+                                                 model_trace.items()
+                                                 if site["type"] == "sample"]
+            return elbos, mutable_params, all(reparameterized)
 
         rng_keys = jax.random.split(rng_key, self.num_particles)
         particle_elbos = jax.vmap(single_particle_elbo)
-        elbos, mutable_states = particle_elbos(rng_keys, mutable_map)
+        log_ws, mutable_states, reparameterized = particle_elbos(rng_keys,
+                                                                 mutable_map)
 
+        surrogate = jax.lax.cond(reparameterized.all(),
+                                 lambda x: jnp.mean(x, axis=0),
+                                 # VarGrad ELBO estimator for all-discrete vars
+                                 lambda x: jnp.var(x, axis=0, ddof=1) / 2,
+                                 -log_ws)
+        loss = jnp.mean(jax.lax.stop_gradient(-log_ws) + surrogate -\
+                        jax.lax.stop_gradient(surrogate))
         if not mutable_states:
             mutable_states = None
-        return {"loss": -jnp.mean(elbos), "mutable_state": mutable_states}
+        return {"loss": loss, "mutable_state": mutable_states}
 
     def loss(self, rng_key, param_map, model, guide, *args, **kwargs):
         def single_particle_elbo(rng_key):
@@ -96,9 +110,24 @@ class TraceVectorized_ELBO(ELBO):
                      guide_log_probs.get(name, 0.0) for name in log_probs}
             if self.sum_sites:
                 elbos = sum(elbos.values(), start=0.0)
-            return elbos
+            reparameterized = [site["fn"].has_rsample for name, site in
+                               guide_trace.items() if site["type"] == "sample"]
+            reparameterized = reparameterized + [site["fn"].has_rsample
+                                                 for name, site in
+                                                 model_trace.items()
+                                                 if site["type"] == "sample" and
+                                                 not site["is_observed"]]
+
+            return elbos, all(reparameterized)
 
         rng_keys = jax.random.split(rng_key, self.num_particles)
         particle_elbos = jax.vmap(single_particle_elbo)
-        elbos = particle_elbos(rng_keys)
-        return -jnp.mean(elbos)
+        log_ws, reparameterized = particle_elbos(rng_keys)
+        surrogate = jax.lax.cond(reparameterized.all(),
+                                 lambda x: jnp.mean(x, axis=0),
+                                 # VarGrad ELBO estimator for all-discrete vars
+                                 lambda x: jnp.var(x, axis=0, ddof=1) / 2,
+                                 -log_ws)
+        loss = jnp.mean(jax.lax.stop_gradient(-log_ws) + surrogate -\
+                        jax.lax.stop_gradient(surrogate))
+        return loss
