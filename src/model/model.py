@@ -1,9 +1,38 @@
+from flax import nnx
 from jax import jit, lax
 from jax.example_libraries import stax
 import jax.numpy as jnp
 
 import numpyro
+from numpyro.contrib.module import nnx_module
 import numpyro.distributions as dist
+
+class PVaeEncoder(nnx.Module):
+    def __init__(self, z_dim, *, rngs: nnx.Rngs):
+        self.conv1 = nnx.Conv(1, 16, kernel_size=(3, 3), strides=2, padding=1,
+                              rngs=rngs)
+        self.conv2 = nnx.Conv(16, 32, kernel_size=(3, 3), strides=2, padding=1,
+                              rngs=rngs)
+        self.linear = nnx.Linear(32 * 7 * 7, z_dim, rngs=rngs)
+
+    def __call__(self, xs, rngs=None):
+        hs = nnx.swish(self.conv1(xs.swapaxes(-3, -1)))
+        hs = nnx.swish(self.conv2(hs))
+        return self.linear(hs.reshape(hs.shape[0], -1))
+
+def pvae_guide(xs, encoder: PVaeEncoder):
+    encoder = nnx_module("encoder", encoder)
+    log_u = encoder(xs)
+    with numpyro.plate("batch", xs.shape[0]):
+        return numpyro.sample("z", dist.Poisson(jnp.exp(log_u)).to_event(1))
+
+def pvae_model(xs, decoder: nnx.Linear, z_dim=1024, x_side=28):
+    decoder = nnx_module("decoder", decoder)
+    scale = jnp.exp(numpyro.param("log_scale", jnp.zeros(())))
+    with numpyro.plate("batch", xs.shape[0]):
+        z = numpyro.sample("z", dist.Poisson(1).expand([z_dim]).to_event(1))
+        loc = decoder(z).reshape(xs.shape)
+        return numpyro.sample("x", dist.Normal(loc, scale).to_event(3), obs=xs)
 
 def encoder(hidden_dim, z_dim):
     return stax.serial(
