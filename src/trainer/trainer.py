@@ -250,9 +250,6 @@ class Trainer:
                 mutables.set_parameters(indices, mutable_updates)
 
         # add histogram of parameters to the tensorboard
-        parameters = monad.parameters
-        for name in parameters:
-            for p, par in enumerate(flatten(parameters[name])):
-                self.writer.add_histogram(name + "$" + str(p), np.asarray(par),
-                                          bins='auto')
+        for name, par in flatten(monad.parameters):
+            self.writer.add_histogram(name, np.asarray(par), bins="auto")
         return self.valid_metrics.result()

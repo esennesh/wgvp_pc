@@ -239,12 +239,12 @@ def task_wrapper(task_func: Callable) -> Callable:
 
     return wrap
 
-def flatten(seq):
-    for elem in seq:
-        if isinstance(elem, (list, tuple)):
-            yield from flatten(elem)
+def flatten(dic, prefix=''):
+    for k, v in dic.items():
+        if isinstance(v, dict):
+            yield from flatten(v, prefix=prefix + "$" + k)
         else:
-            yield elem
+            yield (k, v)
 
 def ensure_dir(dirname):
     dirname = Path(dirname)
