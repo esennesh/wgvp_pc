@@ -58,17 +58,24 @@ class TraceVectorized_ELBO(ELBO):
             }
             log_probs = set(model_log_probs).union(guide_log_probs)
 
-            elbos = {name: model_log_probs.get(name, 0.0) -\
-                     guide_log_probs.get(name, 0.0) for name in log_probs}
+            log_p = {name: model_log_probs.get(name, 0.0) for name in log_probs}
+            log_q = {name: guide_log_probs.get(name, 0.0) for name in log_probs}
             if self.sum_sites:
-                elbos = sum(elbos.values(), start=0.0)
+                log_p = sum(log_p.values(), start=0.0)
+                log_q = sum(log_q.values(), start=0.0)
+            log_w = log_p - log_q
+
             reparameterized = [site["fn"].has_rsample for name, site in
                                guide_trace.items() if site["type"] == "sample"]
             reparameterized = reparameterized + [site["fn"].has_rsample
                                                  for name, site in
                                                  model_trace.items()
                                                  if site["type"] == "sample"]
-            return elbos, mutable_params, all(reparameterized)
+            if not all(reparameterized):
+                surrogate = jax.lax.stop_gradient(log_w) * log_q
+                log_w = log_w + surrogate - jax.lax.stop_gradient(surrogate)
+
+            return log_w, mutable_params
 
         rng_keys = jax.random.split(rng_key, self.num_particles)
         particle_elbos = jax.vmap(single_particle_elbo)
