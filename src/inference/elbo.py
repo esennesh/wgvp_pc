@@ -1,11 +1,12 @@
+from collections import defaultdict
 from jax import Array
 import jax
 import jax.numpy as jnp
 import numpyro
-from numpyro.infer.elbo import ELBO, guess_max_plate_nesting
+from numpyro.infer.elbo import ELBO, get_nonreparam_deps, guess_max_plate_nesting, MultiFrameTensor
 from numpyro.infer.util import get_importance_trace
 from numpyro.util import _validate_model, check_model_guide_match
-from typing import Optional
+from typing import Dict, Optional
 
 class TraceVectorized_ELBO(ELBO):
     def __init__(self, num_particles: int = 1, particles_dim: Optional[int] = None,
@@ -71,19 +72,10 @@ class TraceVectorized_ELBO(ELBO):
 
         rng_keys = jax.random.split(rng_key, self.num_particles)
         particle_elbos = jax.vmap(single_particle_elbo)
-        log_ws, mutable_states, reparameterized = particle_elbos(rng_keys,
-                                                                 mutable_map)
-
-        surrogate = jax.lax.cond(reparameterized.all(),
-                                 lambda x: jnp.mean(x, axis=0),
-                                 # VarGrad ELBO estimator for all-discrete vars
-                                 lambda x: jnp.var(x, axis=0, ddof=1) / 2,
-                                 -log_ws)
-        loss = jnp.mean(jax.lax.stop_gradient(-log_ws) + surrogate -\
-                        jax.lax.stop_gradient(surrogate))
+        log_ws, mutable_states = particle_elbos(rng_keys, mutable_map)
         if not mutable_states:
             mutable_states = None
-        return {"loss": loss, "mutable_state": mutable_states}
+        return {"loss": jnp.mean(-log_ws), "mutable_state": mutable_states}
 
     def loss(self, rng_key, param_map, model, guide, *args, **kwargs):
         def single_particle_elbo(rng_key):
@@ -96,38 +88,46 @@ class TraceVectorized_ELBO(ELBO):
 
             check_model_guide_match(model_trace, guide_trace)
             _validate_model(model_trace, plate_warning="loose")
-            model_log_probs = {
-                name: site["log_prob"] for name, site in model_trace.items()
-                      if site["type"] == "sample"
-            }
-            guide_log_probs = {
-                name: site["log_prob"] for name, site in guide_trace.items()
-                      if site["type"] == "sample"
-            }
-            log_probs = set(model_log_probs).union(guide_log_probs)
+            latents = {}
+            for name, site in guide_trace.items():
+                if site["type"] == "sample" and\
+                   not site.get("is_observed", False):
+                    latents[name] = site["value"]
+            model_deps, guide_deps = get_nonreparam_deps(
+                model, guide, args, kwargs, param_map, latents=latents
+            )
 
-            elbos = {name: model_log_probs.get(name, 0.0) -\
-                     guide_log_probs.get(name, 0.0) for name in log_probs}
-            if self.sum_sites:
-                elbos = sum(elbos.values(), start=0.0)
-            reparameterized = [site["fn"].has_rsample for name, site in
-                               guide_trace.items() if site["type"] == "sample"]
-            reparameterized = reparameterized + [site["fn"].has_rsample
-                                                 for name, site in
-                                                 model_trace.items()
-                                                 if site["type"] == "sample" and
-                                                 not site["is_observed"]]
+            log_w = jnp.array(0.0)
+            # mapping from non-reparameterizable sample sites to cost terms influenced by each of them
+            downstream_costs: Dict[str, MultiFrameTensor] =\
+                defaultdict(lambda: MultiFrameTensor())
+            for name, site in model_trace.items():
+                if site["type"] == "sample":
+                    log_w = log_w + site["log_prob"]
+                    # add the log_prob to each non-reparam sample site upstream
+                    for key in model_deps[name]:
+                        downstream_costs[key].add((site["cond_indep_stack"],
+                                                   site["log_prob"]))
+            for name, site in guide_trace.items():
+                if site["type"] == "sample":
+                    log_q = site["log_prob"] if site["fn"].has_rsample else\
+                            jax.lax.stop_gradient(site["log_prob"])
+                    log_w = log_w - log_q
+                    # add the -log_prob to each non-reparam sample site upstream
+                    for key in guide_deps[name]:
+                        downstream_costs[key].add(
+                            (site["cond_indep_stack"], -site["log_prob"])
+                        )
 
-            return elbos, all(reparameterized)
+            for node, cost in downstream_costs.items():
+                guide_site = guide_trace[node]
+                downstream_cost = cost.sum_to(guide_site["cond_indep_stack"])
+                surrogate = guide_site["log_prob"] *\
+                            jax.lax.stop_gradient(downstream_cost)
+                log_w = log_w + surrogate - jax.lax.stop_gradient(surrogate)
+
+            return log_w
 
         rng_keys = jax.random.split(rng_key, self.num_particles)
-        particle_elbos = jax.vmap(single_particle_elbo)
-        log_ws, reparameterized = particle_elbos(rng_keys)
-        surrogate = jax.lax.cond(reparameterized.all(),
-                                 lambda x: jnp.mean(x, axis=0),
-                                 # VarGrad ELBO estimator for all-discrete vars
-                                 lambda x: jnp.var(x, axis=0, ddof=1) / 2,
-                                 -log_ws)
-        loss = jnp.mean(jax.lax.stop_gradient(-log_ws) + surrogate -\
-                        jax.lax.stop_gradient(surrogate))
-        return loss
+        log_ws = jax.vmap(single_particle_elbo)(rng_keys)
+        return jnp.mean(-log_ws)
