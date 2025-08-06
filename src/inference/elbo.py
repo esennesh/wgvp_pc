@@ -63,17 +63,7 @@ class TraceVectorized_ELBO(ELBO):
             if self.sum_sites:
                 log_p = sum(log_p.values(), start=0.0)
                 log_q = sum(log_q.values(), start=0.0)
-            log_w = log_p - log_q
-
-            reparameterized = [site["fn"].has_rsample for name, site in
-                               guide_trace.items() if site["type"] == "sample"]
-            reparameterized = reparameterized + [site["fn"].has_rsample
-                                                 for name, site in
-                                                 model_trace.items()
-                                                 if site["type"] == "sample"]
-            if not all(reparameterized):
-                surrogate = jax.lax.stop_gradient(log_w) * log_q
-                log_w = log_w + surrogate - jax.lax.stop_gradient(surrogate)
+            log_w = jnp.sum(log_p - log_q)
 
             return log_w, mutable_params
 
@@ -110,7 +100,7 @@ class TraceVectorized_ELBO(ELBO):
                 defaultdict(lambda: MultiFrameTensor())
             for name, site in model_trace.items():
                 if site["type"] == "sample":
-                    log_w = log_w + site["log_prob"]
+                    log_w = log_w + jnp.sum(site["log_prob"])
                     # add the log_prob to each non-reparam sample site upstream
                     for key in model_deps[name]:
                         downstream_costs[key].add((site["cond_indep_stack"],
@@ -119,7 +109,7 @@ class TraceVectorized_ELBO(ELBO):
                 if site["type"] == "sample":
                     log_q = site["log_prob"] if site["fn"].has_rsample else\
                             jax.lax.stop_gradient(site["log_prob"])
-                    log_w = log_w - log_q
+                    log_w = log_w - jnp.sum(log_q)
                     # add the -log_prob to each non-reparam sample site upstream
                     for key in guide_deps[name]:
                         downstream_costs[key].add(
@@ -129,8 +119,10 @@ class TraceVectorized_ELBO(ELBO):
             for node, cost in downstream_costs.items():
                 guide_site = guide_trace[node]
                 downstream_cost = cost.sum_to(guide_site["cond_indep_stack"])
-                surrogate = guide_site["log_prob"] *\
-                            jax.lax.stop_gradient(downstream_cost)
+                surrogate = jnp.sum(
+                    guide_site["log_prob"] *\
+                    jax.lax.stop_gradient(downstream_cost)
+                )
                 log_w = log_w + surrogate - jax.lax.stop_gradient(surrogate)
 
             return log_w
