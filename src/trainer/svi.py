@@ -2,7 +2,7 @@ from functools import partial
 from jax import Array, jit
 import jax.numpy as jnp
 import jax.random as random
-from numpyro.infer import Predictive, SVI
+from numpyro.infer import ELBO, Predictive, SVI
 import numpyro
 from typing import Any, Dict
 
@@ -11,21 +11,19 @@ from src.inference.elbo import TraceVectorized_ELBO
 from src.utils import uncondition
 
 class SviPara(ParaMonad):
-    def __init__(self, data_shape, guide, lr, model, num_particles, rng):
+    def __init__(self, data_shape, guide, lr, model, elbo: ELBO, rng):
         if not isinstance(rng, Array):
             rng = random.key(rng)
         self.optimizer = numpyro.optim.Adam(step_size=lr)
-        self.num_particles = num_particles
         self._rng = rng
-        self.svi = SVI(model, guide, self.optimizer,
-                       TraceVectorized_ELBO(num_particles))
+        self.svi = SVI(model, guide, self.optimizer, elbo)
         self.svi_state = None
 
     def __call__(self, *args, **kwargs):
         predictive = Predictive(
             uncondition(self.svi.model), guide=self.svi.guide,
-            num_samples=self.num_particles, batch_ndims=None, parallel=False,
-            params=self.svi.get_params(self.svi_state)
+            num_samples=self.svi.loss.num_particles, batch_ndims=None,
+            parallel=False, params=self.svi.get_params(self.svi_state)
         )
         return predictive(self.svi_state.rng_key, *args, **kwargs)
 
