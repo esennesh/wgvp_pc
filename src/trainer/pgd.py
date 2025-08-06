@@ -10,7 +10,7 @@ from numpyro.distributions import constraints
 import numpyro.distributions as dist
 from numpyro.infer.autoguide import AutoGuide
 from numpyro.infer.initialization import init_to_sample
-from numpyro.infer import Predictive
+from numpyro.infer import ELBO, Predictive
 from numpyro.infer.util import log_density
 from pytrie import SortedStringTrie as Trie
 from typing import Any, Dict, Tuple
@@ -20,10 +20,10 @@ from src.utils import uncondition
 from .svi import SviPara
 
 class PgdPara(SviPara):
-    def __init__(self, data_shape, lr, model, num_particles, rng, guide=None,
+    def __init__(self, data_shape, lr, model, elbo: ELBO, rng, guide=None,
                  lrq=1e-4):
         super().__init__(data_shape, AutoLangevin(model, lr=lrq), lr, model,
-                         num_particles, rng)
+                         elbo, rng)
 
     def __call__(self, data, targets, indices, mutables=None):
         if mutables is None:
