@@ -1,0 +1,26 @@
+[project]
+name = "wgvp-pc"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "flax>=0.11.1",
+    "hydra-colorlog>=1.2.0",
+    "hydra-core>=1.3.2",
+    "jax[cuda12]>=0.7.0",
+    "jupyterlab>=4.4.5",
+    "jupyterlab-tensorboard-pro>=4.0.0",
+    "numpyro",
+    "pandas>=2.3.1",
+    "pytrie>=0.4.0",
+    "rich>=14.1.0",
+    "rootutils>=1.0.7",
+    "tensorboard>=2.20.0",
+    "tensorboardx>=2.6.4",
+    "torch>=2.8.0",
+    "torchvision>=0.23.0",
+]
+
+[tool.uv.sources]
+numpyro = { path = "../numpyro" }
