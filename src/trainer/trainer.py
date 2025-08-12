@@ -251,5 +251,7 @@ class Trainer:
 
         # add histogram of parameters to the tensorboard
         for name, par in flatten(monad.parameters):
-            self.writer.add_histogram(name, np.asarray(par), bins="auto")
+
+            self.writer.add_histogram(name.replace("$", "_"), np.asarray(par),
+                                      bins="auto")
         return self.valid_metrics.result()
