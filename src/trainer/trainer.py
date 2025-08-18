@@ -157,11 +157,13 @@ class Trainer:
             break
 
         metrics = defaultdict(lambda: [])
+        step = monad.valid_step if valid else monad.test_step
         for batch_idx, batch in enumerate(dataloader):
             if mutables:
                 indices = batch[-1]
                 batch = (*batch, mutables.get_parameters(indices))
-            batch_metrics, mutable_updates = monad.valid_step(*batch)
+
+            batch_metrics, mutable_updates = step(*batch)
             for k, v in batch_metrics.items():
                 metrics[k].append(v)
             if mutables:
