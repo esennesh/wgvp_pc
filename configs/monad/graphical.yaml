@@ -1,0 +1,7 @@
+_target_: src.trainer.graphical.GraphicalImportancePara
+
+lr: 0.0001
+rng: 123
+log_weights:
+  _target_: src.inference.graphical.ELBOTracer
+  num_particles: 4
