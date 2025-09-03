@@ -3,6 +3,7 @@ import itertools
 import jax
 import jax.numpy as jnp
 import jax.random as random
+import networkx as nx
 import numpyro
 from numpyro.distributions import constraints
 from numpyro.distributions.transforms import biject_to
@@ -22,12 +23,14 @@ class GraphicalImportancePara(ParaMonad):
         if not isinstance(rng, jax.Array):
             rng = random.key(rng)
         self._constrain_fn = None
+        self._graph = nx.DiGraph()
         self._guide = guide
         self._lr = lr
         self._model = model
         self.mutable_state = None
         self.optim_state = None
         self.optimizer = numpyro.optim.Adam(step_size=lr)
+        self._relations = {}
         self._rng = rng
         self.trace = None
         self._tracer = tracer
@@ -71,6 +74,28 @@ class GraphicalImportancePara(ParaMonad):
     @property
     def parameters(self):
         return self._constrain_fn(self.optimizer.get_params(self.optim_state))
+
+    def render_model(self, filename=None, render_distributions=False,
+                     render_params=False):
+        from numpyro.infer.inspect import (generate_graph_specification,
+                                           render_graph)
+        graph_spec = generate_graph_specification(self._relations,
+                                                  render_params=render_params)
+        graph = render_graph(graph_spec,
+                             render_distributions=render_distributions)
+
+        if filename is not None:
+            filename = Path(filename)
+            # remove leading period from suffix
+            filename_without_suffix = filename.with_suffix("")
+            graph.render(
+                filename_without_suffix,
+                view=False,
+                cleanup=True,
+                format=filename.suffix[1:],
+            )
+
+        return graph
 
     @property
     def rng(self):
@@ -120,6 +145,13 @@ class GraphicalImportancePara(ParaMonad):
             init_model, init_guide, (data,), kwargs, params, latents=latents
         )
         self.tracer.setup(guide_deps, model_deps, guide_trace, model_trace)
+
+        from src.utils import get_model_relations
+        self._relations = get_model_relations(init_model, (data,), kwargs)
+        for var, parents in self._relations["sample_sample"].items():
+            self._graph.add_node(var)
+            for par in parents:
+                self._graph.add_edge(par, var)
 
     @cached_property
     def _update(self):
