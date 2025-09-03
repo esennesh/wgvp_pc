@@ -4,7 +4,7 @@ import jax.numpy as jnp
 import jax.random as random
 import numpyro
 from numpyro.infer.elbo import MultiFrameTensor
-from numpyro.infer.util import get_importance_trace
+from numpyro.infer.util import compute_log_probs, get_importance_trace
 from numpyro._typing import Message
 from numpyro.util import _validate_model, check_model_guide_match
 
@@ -92,6 +92,37 @@ class ParticleTracer:
         trace, mutables  = particle_traces(rng_keys, mutable_map,
                                            particle=particles)
         return {"mutable_state": mutables, "trace": trace}
+
+    def log_probs(self, model, params, traces, *args, **kwargs):
+        params = params.copy()
+        mutable_map = {}
+        for name, param in list(params.items()):
+            if isinstance(param, dict) and "value" in param:
+                mutable_map[name] = param
+                if param["value"].shape[0] != self.num_particles:
+                    param["value"] = jnp.broadcast_to(
+                        param["value"],
+                        (self.num_particles, *param["value"].shape)
+                    )
+                del params[name]
+
+        def single_log_prob(mutable_map, trace, particle=None):
+            import functools
+
+            params.update(mutable_map)
+            params.update(trace)
+            particle_model = model
+            if particle is not None:
+                particle_model = numpyro.handlers.infer_config(
+                    particle_model,
+                    functools.partial(configure_sample, k=particle)
+                )
+            log_ps, _ = compute_log_probs(model, args, kwargs, params)
+            return log_ps
+
+        particles = jnp.arange(self.num_particles)
+        particle_log_probs = jax.vmap(single_log_prob)
+        return particle_log_probs(mutable_map, traces, particle=particles)
 
     def loss(self, *args, **kwargs):
         objective = super().loss(*args, **kwargs)
