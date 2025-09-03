@@ -7,6 +7,7 @@ import numpyro
 from numpyro.distributions import constraints
 from numpyro.distributions.transforms import biject_to
 from numpyro.infer.elbo import get_nonreparam_deps
+from numpyro.infer import Predictive
 from numpyro.infer.util import (get_importance_trace, helpful_support_errors,
                                 transform_fn)
 from typing import Any, Dict
