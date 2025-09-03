@@ -17,13 +17,12 @@ from src.inference.graphical import ParticleTracer
 from src.utils import uncondition
 
 class GraphicalImportancePara(ParaMonad):
-    def __init__(self, data_shape, guide, log_weights: ParticleTracer, lr,
+    def __init__(self, data_shape, guide, tracer: ParticleTracer, lr,
                  model, rng):
         if not isinstance(rng, jax.Array):
             rng = random.key(rng)
         self._constrain_fn = None
         self._guide = guide
-        self._log_weights = log_weights
         self._lr = lr
         self._model = model
         self.mutable_state = None
@@ -31,12 +30,13 @@ class GraphicalImportancePara(ParaMonad):
         self.optimizer = numpyro.optim.Adam(step_size=lr)
         self._rng = rng
         self.trace = None
+        self._tracer = tracer
 
     def __call__(self, *args, **kwargs):
         self._rng, rng = random.split(self.rng)
         predictive = Predictive(
             uncondition(self.model), guide=self.guide,
-            num_samples=self.log_weights.num_particles, batch_ndims=None,
+            num_samples=self.tracer.num_particles, batch_ndims=None,
             parallel=False, params=self.parameters
         )
         return predictive(rng, *args, **kwargs)
@@ -47,8 +47,8 @@ class GraphicalImportancePara(ParaMonad):
         def fn(data, mutables, params, rng):
             next_rng, rng = random.split(rng)
             params.update(jax.lax.stop_gradient(mutables))
-            loss, state = self.log_weights.loss(rng, params, self.model,
-                                                self.guide, data)
+            loss, state = self.tracer.loss(rng, params, self.model, self.guide,
+                                           data)
             return loss, next_rng, state
         return fn
 
@@ -61,8 +61,8 @@ class GraphicalImportancePara(ParaMonad):
         self.optim_state = checkpoint["optim_state"]
 
     @property
-    def log_weights(self):
-        return self._log_weights
+    def tracer(self):
+        return self._tracer
 
     @property
     def model(self):
@@ -119,7 +119,7 @@ class GraphicalImportancePara(ParaMonad):
         model_deps, guide_deps = get_nonreparam_deps(
             init_model, init_guide, (data,), kwargs, params, latents=latents
         )
-        self.log_weights.setup(guide_deps, model_deps, guide_trace, model_trace)
+        self.tracer.setup(guide_deps, model_deps, guide_trace, model_trace)
 
     @cached_property
     def _update(self):
@@ -128,8 +128,8 @@ class GraphicalImportancePara(ParaMonad):
             next_rng, rng = random.split(rng)
             def loss_fn(params):
                 params.update(jax.lax.stop_gradient(mutables))
-                return self.log_weights.loss(rng, params, self.model,
-                                             self.guide, data)
+                return self.tracer.loss(rng, params, self.model, self.guide,
+                                        data)
             (loss, state), optim_state = self.optimizer.eval_and_update(
                 loss_fn, optim_state
             )
