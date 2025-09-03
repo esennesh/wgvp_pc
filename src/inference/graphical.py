@@ -5,9 +5,13 @@ import jax.random as random
 import numpyro
 from numpyro.infer.elbo import MultiFrameTensor
 from numpyro.infer.util import get_importance_trace
+from numpyro._typing import Message
 from numpyro.util import _validate_model, check_model_guide_match
 
 from typing import Dict
+
+def configure_sample(msg: Message, /, **kwargs) -> Dict:
+    return kwargs
 
 class ParticleTracer:
     def __init__(self, num_particles: int=1):
@@ -26,12 +30,24 @@ class ParticleTracer:
                     )
                 del param_map[name]
 
-        def single_trace(rng_key, mutable_map):
+        def single_trace(rng_key, mutable_map, particle=None):
+            import functools
+
             param_map.update(mutable_map)
+            particle_guide, particle_model = guide, model
 
             model_seed, guide_seed = random.split(rng_key)
-            seeded_model = numpyro.handlers.seed(model, model_seed)
-            seeded_guide = numpyro.handlers.seed(guide, guide_seed)
+            if particle is not None:
+                particle_guide = numpyro.handlers.infer_config(
+                    particle_guide,
+                    functools.partial(configure_sample, k=particle)
+                )
+                particle_model = numpyro.handlers.infer_config(
+                    particle_model,
+                    functools.partial(configure_sample, k=particle)
+                )
+            seeded_model = numpyro.handlers.seed(particle_model, model_seed)
+            seeded_guide = numpyro.handlers.seed(particle_guide, guide_seed)
             model_trace, guide_trace = get_importance_trace(seeded_model,
                                                             seeded_guide, args,
                                                             kwargs, param_map)
@@ -71,8 +87,10 @@ class ParticleTracer:
             return graph_state, model_mutables
 
         rng_keys = random.split(rng_key, self.num_particles)
+        particles = jnp.arange(self.num_particles)
         particle_traces = jax.vmap(single_trace)
-        trace, mutables  = particle_traces(rng_keys, mutable_map)
+        trace, mutables  = particle_traces(rng_keys, mutable_map,
+                                           particle=particles)
         return {"mutable_state": mutables, "trace": trace}
 
     def loss(self, *args, **kwargs):

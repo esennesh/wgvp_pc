@@ -3,6 +3,7 @@ import itertools
 import jax
 import jax.numpy as jnp
 import jax.random as random
+import networkx as nx
 import numpyro
 from numpyro.distributions import constraints
 from numpyro.distributions.transforms import biject_to
@@ -17,26 +18,28 @@ from src.inference.graphical import ParticleTracer
 from src.utils import uncondition
 
 class GraphicalImportancePara(ParaMonad):
-    def __init__(self, data_shape, guide, log_weights: ParticleTracer, lr,
+    def __init__(self, data_shape, guide, tracer: ParticleTracer, lr,
                  model, rng):
         if not isinstance(rng, jax.Array):
             rng = random.key(rng)
         self._constrain_fn = None
+        self._graph = nx.DiGraph()
         self._guide = guide
-        self._log_weights = log_weights
         self._lr = lr
         self._model = model
         self.mutable_state = None
         self.optim_state = None
         self.optimizer = numpyro.optim.Adam(step_size=lr)
+        self._relations = {}
         self._rng = rng
         self.trace = None
+        self._tracer = tracer
 
     def __call__(self, *args, **kwargs):
         self._rng, rng = random.split(self.rng)
         predictive = Predictive(
             uncondition(self.model), guide=self.guide,
-            num_samples=self.log_weights.num_particles, batch_ndims=None,
+            num_samples=self.tracer.num_particles, batch_ndims=None,
             parallel=False, params=self.parameters
         )
         return predictive(rng, *args, **kwargs)
@@ -47,8 +50,8 @@ class GraphicalImportancePara(ParaMonad):
         def fn(data, mutables, params, rng):
             next_rng, rng = random.split(rng)
             params.update(jax.lax.stop_gradient(mutables))
-            loss, state = self.log_weights.loss(rng, params, self.model,
-                                                self.guide, data)
+            loss, state = self.tracer.loss(rng, params, self.model, self.guide,
+                                           data)
             return loss, next_rng, state
         return fn
 
@@ -61,8 +64,8 @@ class GraphicalImportancePara(ParaMonad):
         self.optim_state = checkpoint["optim_state"]
 
     @property
-    def log_weights(self):
-        return self._log_weights
+    def tracer(self):
+        return self._tracer
 
     @property
     def model(self):
@@ -71,6 +74,28 @@ class GraphicalImportancePara(ParaMonad):
     @property
     def parameters(self):
         return self._constrain_fn(self.optimizer.get_params(self.optim_state))
+
+    def render_model(self, filename=None, render_distributions=False,
+                     render_params=False):
+        from numpyro.infer.inspect import (generate_graph_specification,
+                                           render_graph)
+        graph_spec = generate_graph_specification(self._relations,
+                                                  render_params=render_params)
+        graph = render_graph(graph_spec,
+                             render_distributions=render_distributions)
+
+        if filename is not None:
+            filename = Path(filename)
+            # remove leading period from suffix
+            filename_without_suffix = filename.with_suffix("")
+            graph.render(
+                filename_without_suffix,
+                view=False,
+                cleanup=True,
+                format=filename.suffix[1:],
+            )
+
+        return graph
 
     @property
     def rng(self):
@@ -119,7 +144,14 @@ class GraphicalImportancePara(ParaMonad):
         model_deps, guide_deps = get_nonreparam_deps(
             init_model, init_guide, (data,), kwargs, params, latents=latents
         )
-        self.log_weights.setup(guide_deps, model_deps, guide_trace, model_trace)
+        self.tracer.setup(guide_deps, model_deps, guide_trace, model_trace)
+
+        from src.utils import get_model_relations
+        self._relations = get_model_relations(init_model, (data,), kwargs)
+        for var, parents in self._relations["sample_sample"].items():
+            self._graph.add_node(var)
+            for par in parents:
+                self._graph.add_edge(par, var)
 
     @cached_property
     def _update(self):
@@ -128,8 +160,8 @@ class GraphicalImportancePara(ParaMonad):
             next_rng, rng = random.split(rng)
             def loss_fn(params):
                 params.update(jax.lax.stop_gradient(mutables))
-                return self.log_weights.loss(rng, params, self.model,
-                                             self.guide, data)
+                return self.tracer.loss(rng, params, self.model, self.guide,
+                                        data)
             (loss, state), optim_state = self.optimizer.eval_and_update(
                 loss_fn, optim_state
             )
