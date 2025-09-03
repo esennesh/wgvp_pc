@@ -16,6 +16,176 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 log = logging.LoggerAdapter(logger=logging.getLogger(__name__))
 
+def get_model_relations(model, model_args=None, model_kwargs=None):
+    """
+    Infer relations of RVs and plates from given model and optionally data.
+    See https://github.com/pyro-ppl/numpyro/issues/949 for more details.
+
+    This returns a dictionary with keys:
+
+    -  "sample_sample" map each downstream sample site to a list of the upstream
+       sample sites on which it depend;
+    -  "sample_param" map each downstream sample site to a list of the upstream
+       param sites on which it depend;
+    -  "sample_dist" maps each sample site to the name of the distribution at
+       that site;
+    -  "param_constraint" maps each param site to the name of the constraints at
+       that site;
+    -  "plate_sample" maps each plate name to a lists of the sample sites
+       within that plate; and
+    -  "observe" is a list of observed sample sites.
+
+    For example for the model::
+
+        def model(data):
+            m = numpyro.sample('m', dist.Normal(0, 1))
+            sd = numpyro.sample('sd', dist.LogNormal(m, 1))
+            with numpyro.plate('N', len(data)):
+                numpyro.sample('obs', dist.Normal(m, sd), obs=data)
+
+    the relation is::
+
+        {'sample_sample': {'m': [], 'sd': ['m'], 'obs': ['m', 'sd']},
+         'sample_dist': {'m': 'Normal', 'sd': 'LogNormal', 'obs': 'Normal'},
+         'plate_sample': {'N': ['obs']},
+         'observed': ['obs']}
+
+    :param callable model: A model to inspect.
+    :param model_args: Optional tuple of model args.
+    :param model_kwargs: Optional dict of model kwargs.
+    :rtype: dict
+    """
+    from numpyro import handlers
+    import numpyro.distributions as dist
+    from numpyro.ops.provenance import eval_provenance
+    from numpyro.ops.pytree import PytreeTrace
+    model_args = model_args or ()
+    model_kwargs = model_kwargs or {}
+
+    def _get_dist_name(fn):
+        if isinstance(
+            fn, (dist.Independent, dist.ExpandedDistribution, dist.MaskedDistribution)
+        ):
+            return _get_dist_name(fn.base_dist)
+        return type(fn).__name__
+
+    def get_trace():
+        # We use `init_to_sample` to get around ImproperUniform distribution,
+        # which does not have `sample` method.
+        subs_model = handlers.seed(model, 0)
+        trace = handlers.trace(subs_model).get_trace(*model_args, **model_kwargs)
+        # Work around an issue where jax.eval_shape does not work
+        # for distribution output (e.g. the function `lambda: dist.Normal(0, 1)`)
+        # Here we will remove `fn` and store its name in the trace.
+        for name, site in trace.items():
+            if site["type"] == "sample":
+                site["fn_name"] = _get_dist_name(site.pop("fn"))
+            elif site["type"] == "deterministic":
+                site["fn_name"] = "Deterministic"
+        return PytreeTrace(trace)
+
+    # We use eval_shape to avoid any array computation.
+    trace = jax.eval_shape(get_trace).trace
+    obs_sites = [
+        name
+        for name, site in trace.items()
+        if site["type"] == "sample" and site["is_observed"]
+    ]
+    sample_dist = {
+        name: site["fn_name"]
+        for name, site in trace.items()
+        if site["type"] in ["sample", "deterministic"]
+    }
+
+    sample_plates = {
+        name: [frame.name for frame in site["cond_indep_stack"]]
+        for name, site in trace.items()
+        if site["type"] in ["sample", "deterministic"]
+    }
+    plate_samples = {
+        k: {name for name, plates in sample_plates.items() if k in plates}
+        for k in trace
+        if trace[k]["type"] == "plate"
+    }
+
+    def _resolve_plate_samples(plate_samples):
+        for p, pv in plate_samples.items():
+            for q, qv in plate_samples.items():
+                if len(pv & qv) > 0 and len(pv - qv) > 0 and len(qv - pv) > 0:
+                    plate_samples_ = plate_samples.copy()
+                    plate_samples_[q] = pv & qv
+                    plate_samples_[q + "__CLONE"] = qv - pv
+                    return _resolve_plate_samples(plate_samples_)
+        return plate_samples
+
+    plate_samples = _resolve_plate_samples(plate_samples)
+    # convert set to list to keep order of variables
+    plate_samples = {
+        k: [name for name in trace if name in v] for k, v in plate_samples.items()
+    }
+
+    def get_log_probs(**sample):
+        class substitute_deterministic(handlers.substitute):
+            def process_message(self, msg):
+                if msg["type"] == "deterministic":
+                    msg["args"] = (msg["value"],)
+                    msg["kwargs"] = {}
+                    msg["value"] = self.data.get(msg["name"])
+                    msg["fn"] = lambda x: x
+
+        # Note: We use seed 0 for parameter initialization.
+        with handlers.trace() as tr, handlers.seed(rng_seed=0):
+            with (
+                handlers.substitute(data=sample),
+                substitute_deterministic(data=sample),
+            ):
+                model(*model_args, **model_kwargs)
+        provenance_arrays = {}
+        for name, site in tr.items():
+            if site["type"] == "sample":
+                provenance_arrays[name] = site["fn"].log_prob(site["value"])
+            elif site["type"] == "deterministic":
+                provenance_arrays[name] = site["args"][0]
+        return provenance_arrays
+
+    samples = {
+        name: site["value"]
+        for name, site in trace.items()
+        if site["type"] == "sample" or site["type"] == "deterministic"
+    }
+
+    params = {
+        name: site["value"] for name, site in trace.items() if site["type"] == "param"
+    }
+
+    sample_params_deps = eval_provenance(get_log_probs, **samples, **params)
+
+    sample_sample = {}
+    sample_param = {}
+    for name in sample_dist:
+        sample_sample[name] = [
+            var
+            for var in sample_dist
+            if var in sample_params_deps[name] and var != name
+        ]
+        sample_param[name] = [var for var in sample_params_deps[name] if var in params]
+
+    param_constraint = {}
+    for param in params:
+        if "constraint" in trace[param]["kwargs"]:
+            param_constraint[param] = str(trace[param]["kwargs"]["constraint"])
+        else:
+            param_constraint[param] = ""
+
+    return {
+        "sample_sample": sample_sample,
+        "sample_param": sample_param,
+        "sample_dist": sample_dist,
+        "param_constraint": param_constraint,
+        "plate_sample": plate_samples,
+        "observed": obs_sites,
+    }
+
 class uncondition(numpyro.primitives.Messenger):
     """
     Messenger to force the value of observed nodes to be sampled from their
