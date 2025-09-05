@@ -158,8 +158,8 @@ class ELBOTracer(ParticleTracer):
                     ))
                 if name in self._guide_properties:
                     log_q = jnp.sum(site[2], axis=-1)
-                    if self._guide_properties[name]["reparameterized"]:
-                        log_q = jax.lax.stop_gradient(loq_q)
+                    if not self._guide_properties[name]["reparameterized"]:
+                        log_q = jax.lax.stop_gradient(log_q)
                     log_ws = log_ws - log_q
                     for key in self._guide_deps[name]:
                         downstream_costs[key].add((
