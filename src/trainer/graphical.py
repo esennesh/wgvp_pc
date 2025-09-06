@@ -37,12 +37,9 @@ class GraphicalImportancePara(ParaMonad):
 
     def __call__(self, *args, **kwargs):
         self._rng, rng = random.split(self.rng)
-        predictive = Predictive(
-            uncondition(self.model), guide=self.guide,
-            num_samples=self.tracer.num_particles, batch_ndims=None,
-            parallel=False, params=self.parameters
-        )
-        return predictive(rng, *args, **kwargs)
+        trace = self.tracer(rng, self.parameters, uncondition(self.model),
+                            self.guide, *args, **kwargs)["trace"]
+        return {k: v[0] for k, v in trace.items()}
 
     @cached_property
     def _evaluate(self):
