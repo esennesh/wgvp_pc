@@ -142,8 +142,8 @@ class ELBOTracer(ParticleTracer):
     def loss(self, *args, **kwargs):
         objective = self(*args, **kwargs)
         if objective["mutable_state"]:
-            log_ws = sum(jnp.sum(site[1] - site[2], axis=-1) for name, site in
-                         objective["trace"].items())
+            log_ws = sum(jnp.sum(site[1], axis=-1) - jnp.sum(site[2], axis=-1)
+                         for name, site in objective["trace"].items())
         else:
             log_ws = jnp.array(0.0)
             # mapping from non-reparameterizable sample sites to cost terms influenced by each of them
