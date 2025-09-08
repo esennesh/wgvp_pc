@@ -417,6 +417,7 @@ def flatten(collection, prefix=''):
 
 def flatten_dict(dic, prefix=''):
     for k, v in dic.items():
+        k = str(k)
         name = prefix + "$" + k if prefix else k
         if isinstance(v, (list, tuple, dict)):
             yield from flatten(v, prefix=name)
