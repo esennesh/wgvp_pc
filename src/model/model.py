@@ -15,17 +15,31 @@ class WhatEncoder(nnx.Module):
     def __init__(self, hidden_dim=400, in_side=20, z_what_dim=50, *,
                  rngs: nnx.Rngs):
         self._att_side = in_side
-        self.linear1 = nnx.Linear(in_side ** 2, hidden_dim, rngs=rngs)
-        self.linear2 = nnx.Linear(hidden_dim, z_what_dim * 2, rngs=rngs)
+        self.convs = nnx.Sequential(
+            # Toil and trouble.
+            nnx.ConvTranspose(in_features=1, out_features=8, kernel_size=(4, 4),
+                              rngs=rngs),
+            nnx.silu,
+            nnx.Conv(in_features=8, out_features=16, kernel_size=(5, 5),
+                     strides=(2, 2), rngs=rngs),
+            nnx.silu,
+            nnx.Conv(in_features=16, out_features=32, kernel_size=(5, 5),
+                     strides=(2, 2), rngs=rngs),
+            nnx.silu,
+        )
+
+        self.mlp = nnx.Sequential(
+            nnx.Linear(7 * 7 * 32, hidden_dim, rngs=rngs), nnx.silu,
+            nnx.Linear(hidden_dim, z_what_dim * 2, rngs=rngs)
+        )
 
     @property
     def att_side(self):
         return self._att_side
 
     def __call__(self, att, rngs=None):
-        att = att.reshape((att.shape[0], math.prod(att.shape[1:]),))
-        h = nnx.silu(self.linear1(att))
-        a = self.linear2(h)
+        h = self.convs(att.transpose(0, 2, 3, 1)).reshape((-1, 7 * 7 * 32))
+        a = self.mlp(h)
         return a[:, 0:50], nnx.softplus(a[:, 50:])
 
 class WhereEncoder(nnx.Module):
