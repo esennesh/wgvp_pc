@@ -2,10 +2,10 @@ _target_: src.model.model.pvae_model
 _partial_: true
 decoder:
   _target_: flax.nnx.Linear
-  in_features: 1024
+  in_features: 1568
   out_features: 784
   rngs:
     _target_: flax.nnx.Rngs
     default: 1234
 x_side: 28
-z_dim: 1024
+z_dim: 1568

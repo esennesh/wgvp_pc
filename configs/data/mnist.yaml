@@ -1,6 +1,7 @@
 _target_: src.data.mnist.MnistDataModule
 data_dir: ${paths.data_dir}
 batch_size: 128 # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
+binarize: false
 drop_last: true
 idx_dim: 1
 indexed: true
