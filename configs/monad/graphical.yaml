@@ -1,6 +1,6 @@
 _target_: src.trainer.graphical.GraphicalImportancePara
 
-lr: 1e-5
+lr: 1e-4
 rng: 123
 tracer:
   _target_: src.inference.graphical.ELBOTracer
