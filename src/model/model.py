@@ -15,17 +15,31 @@ class WhatEncoder(nnx.Module):
     def __init__(self, hidden_dim=400, in_side=20, z_what_dim=50, *,
                  rngs: nnx.Rngs):
         self._att_side = in_side
-        self.linear1 = nnx.Linear(in_side ** 2, hidden_dim, rngs=rngs)
-        self.linear2 = nnx.Linear(hidden_dim, z_what_dim * 2, rngs=rngs)
+        self.convs = nnx.Sequential(
+            # Toil and trouble.
+            nnx.ConvTranspose(in_features=1, out_features=8, kernel_size=(4, 4),
+                              rngs=rngs),
+            nnx.silu,
+            nnx.Conv(in_features=8, out_features=16, kernel_size=(5, 5),
+                     strides=(2, 2), rngs=rngs),
+            nnx.silu,
+            nnx.Conv(in_features=16, out_features=32, kernel_size=(5, 5),
+                     strides=(2, 2), rngs=rngs),
+            nnx.silu,
+        )
+
+        self.mlp = nnx.Sequential(
+            nnx.Linear(7 * 7 * 32, hidden_dim, rngs=rngs), nnx.silu,
+            nnx.Linear(hidden_dim, z_what_dim * 2, rngs=rngs)
+        )
 
     @property
     def att_side(self):
         return self._att_side
 
     def __call__(self, att, rngs=None):
-        att = att.reshape((att.shape[0], math.prod(att.shape[1:]),))
-        h = nnx.silu(self.linear1(att))
-        a = self.linear2(h)
+        h = self.convs(att.transpose(0, 2, 3, 1)).reshape((-1, 7 * 7 * 32))
+        a = self.mlp(h)
         return a[:, 0:50], nnx.softplus(a[:, 50:])
 
 class WhereEncoder(nnx.Module):
@@ -80,15 +94,31 @@ class AirDecoder(nnx.Module):
         super().__init__()
         self._out_side = out_side
         self._z_what_dim = z_what_dim
-        self.linear1 = nnx.Linear(z_what_dim, hidden_dim, rngs=rngs)
-        self.linear2 = nnx.Linear(hidden_dim, out_side ** 2 + 1, rngs=rngs)
+        self.mlp = nnx.Sequential(
+            nnx.Linear(z_what_dim, hidden_dim, rngs=rngs), nnx.silu,
+            nnx.Linear(hidden_dim, 7 * 7 * 32, rngs=rngs), nnx.silu
+        )
+        self.convs = nnx.Sequential(
+            # Double,
+            nnx.ConvTranspose(in_features=32, out_features=16,
+                              kernel_size=(5, 5), strides=(2, 2), rngs=rngs),
+            nnx.silu,
+            # Double,
+            nnx.ConvTranspose(in_features=16, out_features=8,
+                              kernel_size=(5, 5), strides=(2, 2), rngs=rngs),
+            nnx.silu,
+            # Toil and trouble.
+            nnx.Conv(in_features=8, out_features=1, kernel_size=(4, 4),
+                     rngs=rngs),
+            nnx.sigmoid
+        )
+        self.precision = nnx.Linear(7 * 7 * 32, 1, rngs=rngs)
 
     def __call__(self, z_what, rngs=None):
-        h = nnx.silu(self.linear1(z_what))
-        h = self.linear2(h)
-        x = nnx.sigmoid(h[:, :-1]).reshape(z_what.shape[0], self._out_side,
-                                           self._out_side)
-        return jnp.expand_dims(x, -3), jnp.exp(2 * h[:, -1])
+        h = self.mlp(z_what)
+        x = self.convs(h.reshape(-1, 7, 7, 32))
+        x = x.reshape(-1, 1, self._out_side, self._out_side)
+        return x, jnp.exp(2 * self.precision(h)).squeeze()
 
     @property
     def z_what_dim(self):

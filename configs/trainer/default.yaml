@@ -3,7 +3,7 @@ _target_: src.trainer.Trainer
 default_root_dir: ${paths.output_dir}
 
 min_epochs: 1 # prevents early stopping
-epochs: 100
+epochs: 500
 
 # mixed precision for extra speed-up
 # precision: 16
@@ -12,4 +12,4 @@ epochs: 100
 check_val_every_n_epoch: 1
 
 # save a checkpoint every N training epochs
-save_period: 25
+save_period: 100
