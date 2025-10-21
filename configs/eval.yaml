@@ -1,8 +1,8 @@
 defaults:
   - _self_
-  - data: multi_mnist
-  - guide: air
-  - model: air
+  - data: mnist
+  - guide: vae
+  - model: vae
   - monad: graphical
   - trainer: default
   - paths: default
