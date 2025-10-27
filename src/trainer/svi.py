@@ -7,6 +7,7 @@ import numpyro
 from typing import Any, Dict
 
 from .para import ParaMonad
+from src.data import DataModule
 from src.inference.elbo import TraceVectorized_ELBO
 from src.utils import uncondition
 
@@ -37,7 +38,11 @@ class SviPara(ParaMonad):
     def save(self):
         return {"svi_state": self.svi_state}
 
-    def setup_step(self, data, *args):
+    def setup_step(self, datamodule: DataModule, stage: str=""):
+        for batch in getattr(datamodule, stage + "_dataloader")():
+            data = batch[0]
+            break
+
         if self.svi_state is None:
             self.svi_state = self.svi.init(self._rng, data)
         else:
@@ -60,20 +65,14 @@ class SviPara(ParaMonad):
     def svi_update(svi, state, data):
         return svi.update(state, data)
 
-    def test_step(self, data, *args, mutables=None):
-        if mutables is None:
-            mutables = {}
+    def test_step(self, data, *args):
         self.svi_state, loss = self.svi_evaluate(self.svi, self.svi_state, data)
-        return {"loss": loss}, mutables
+        return {"loss": loss}
 
-    def train_step(self, data, *args, mutables=None):
-        if mutables is None:
-            mutables = {}
+    def train_step(self, data, *args):
         self.svi_state, loss = self.svi_update(self.svi, self.svi_state, data)
-        return {"loss": loss}, mutables
+        return {"loss": loss}
 
-    def valid_step(self, data, *args, mutables=None) -> Dict[str, float]:
-        if mutables is None:
-            mutables = {}
+    def valid_step(self, data, *args) -> Dict[str, float]:
         self.svi_state, loss = self.svi_evaluate(self.svi, self.svi_state, data)
-        return {"loss": loss}, mutables
+        return {"loss": loss}
