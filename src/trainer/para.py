@@ -1,4 +1,8 @@
 from abc import abstractmethod, abstractproperty
+from jax import Array
+import jax.numpy as jnp
+import numpy as np
+from pytrie import SortedStringTrie as Trie
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 class ParaMonad:
