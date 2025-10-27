@@ -34,7 +34,7 @@ class ParaMonad:
         raise NotImplementedError
 
     @abstractmethod
-    def train_step(self, *args, **kwargs) -> Tuple[Any, Dict[str, float]]:
+    def train_step(self, *args, **kwargs) -> Dict[str, float]:
         raise NotImplementedError
 
     @abstractmethod
