@@ -15,6 +15,8 @@ from numpyro.infer.util import log_density
 from pytrie import SortedStringTrie as Trie
 from typing import Any, Dict, Tuple
 
+from .para import BatchParameters
+from src.data import DataModule
 from src.inference import AutoLangevin
 from src.utils import uncondition
 from .svi import SviPara
@@ -22,12 +24,12 @@ from .svi import SviPara
 class PgdPara(SviPara):
     def __init__(self, data_shape, lr, model, elbo: ELBO, rng, guide=None,
                  lrq=1e-4):
+        self.test_particles, self.train_particles = None, None
         super().__init__(data_shape, AutoLangevin(model, lr=lrq), lr, model,
                          elbo, rng)
 
-    def __call__(self, data, targets, indices, mutables=None):
-        if mutables is None:
-            mutables = {}
+    def __call__(self, data, targets, indices, stage="train"):
+        mutables = getattr(self, stage + "_particles").get_parameters(indices)
 
         for site in self.svi.guide.prototype_trace:
             if site not in mutables:
@@ -43,15 +45,36 @@ class PgdPara(SviPara):
         )
         return predictive(self.svi_state.rng_key, data)
 
-    def train_step(self, data, target, indices, mutables=None):
-        if mutables is None:
-            mutables = {}
+    def load(self, checkpoint: Dict[str, Any]):
+        super().load(checkpoint)
+        self.test_particles = BatchParameters.unpickle(
+            checkpoint["test_particles"]
+        )
+        self.train_particles = BatchParameters.unpickle(
+            checkpoint["train_particles"]
+        )
 
+    def save(self):
+        state = super().save()
+        return {**state, "test_particles": self.test_particles.pickle(),
+                "train_particles": self.train_particles.pickle()}
+
+    def setup_step(self, datamodule: DataModule, stage: str=""):
+        if self.test_particles is None:
+            self.test_particles = BatchParameters(len(datamodule.data_test))
+        if self.train_particles is None:
+            self.train_particles = BatchParameters(len(datamodule.data_train) +\
+                                                   len(datamodule.data_val),
+                                                   axis=1)
+        return super().setup_step(datamodule, stage=stage)
+
+    def train_step(self, data, target, indices):
         for site in self.svi.guide.prototype_trace:
-            if site not in mutables:
+            if site not in self.train_particles:
                 continue
             mutable = "{}_{}_loc".format(site, self.svi.guide.prefix)
-            self.svi_state.mutable_state[mutable]["value"] = mutables[site]
+            self.svi_state.mutable_state[mutable]["value"] =\
+                self.train_particles.get_parameter(indices, site)
 
         self.svi_state, loss = self.svi_update(self.svi, self.svi_state, data)
 
@@ -59,19 +82,19 @@ class PgdPara(SviPara):
             if site["type"] != "sample" or site["is_observed"]:
                 continue
             mutable = "{}_{}_loc".format(name, self.svi.guide.prefix)
-            mutables[name] = self.svi_state.mutable_state[mutable]["value"]
+            self.train_particles.set_parameter(
+                indices, name, self.svi_state.mutable_state[mutable]["value"]
+            )
 
-        return {"loss": loss}, mutables
+        return {"loss": loss}
 
-    def test_step(self, data, target, indices, mutables=None):
-        if mutables is None:
-            mutables = {}
-
+    def test_step(self, data, target, indices):
         for site in self.svi.guide.prototype_trace:
-            if site not in mutables:
+            if site not in self.test_particles:
                 continue
             mutable = "{}_{}_loc".format(site, self.svi.guide.prefix)
-            self.svi_state.mutable_state[mutable]["value"] = mutables[site]
+            self.svi_state.mutable_state[mutable]["value"] =\
+                self.test_particles.get_parameter(indices, site)
 
         self.svi_state, loss = self.svi_evaluate(self.svi, self.svi_state, data)
 
@@ -79,19 +102,19 @@ class PgdPara(SviPara):
             if site["type"] != "sample" or site["is_observed"]:
                 continue
             mutable = "{}_{}_loc".format(name, self.svi.guide.prefix)
-            mutables[name] = self.svi_state.mutable_state[mutable]["value"]
+            self.test_particles.set_parameter(
+                indices, name, self.svi_state.mutable_state[mutable]["value"]
+            )
 
-        return {"loss": loss}, mutables
+        return {"loss": loss}
 
-    def valid_step(self, data, target, indices, mutables=None):
-        if mutables is None:
-            mutables = {}
-
+    def valid_step(self, data, target, indices):
         for site in self.svi.guide.prototype_trace:
-            if site not in mutables:
+            if site not in self.train_particles:
                 continue
             mutable = "{}_{}_loc".format(site, self.svi.guide.prefix)
-            self.svi_state.mutable_state[mutable]["value"] = mutables[site]
+            self.svi_state.mutable_state[mutable]["value"] =\
+                self.train_particles.get_parameter(indices, site)
 
         self.svi_state, loss = self.svi_evaluate(self.svi, self.svi_state, data)
 
@@ -99,6 +122,8 @@ class PgdPara(SviPara):
             if site["type"] != "sample" or site["is_observed"]:
                 continue
             mutable = "{}_{}_loc".format(name, self.svi.guide.prefix)
-            mutables[name] = self.svi_state.mutable_state[mutable]["value"]
+            self.train_particles.set_parameter(
+                indices, name, self.svi_state.mutable_state[mutable]["value"]
+            )
 
-        return {"loss": loss}, mutables
+        return {"loss": loss}
