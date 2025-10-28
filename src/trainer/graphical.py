@@ -14,6 +14,7 @@ from numpyro.infer.util import (get_importance_trace, helpful_support_errors,
 from typing import Any, Dict
 
 from .para import ParaMonad
+from src.data import DataModule
 from src.inference.graphical import ParticleTracer
 from src.utils import uncondition
 
@@ -37,8 +38,9 @@ class GraphicalImportancePara(ParaMonad):
 
     def __call__(self, *args, **kwargs):
         self._rng, rng = random.split(self.rng)
-        trace = self.tracer(rng, self.parameters, uncondition(self.model),
-                            self.guide, *args, **kwargs)["trace"]
+        trace, mutables = self.tracer(rng, self.parameters,
+                                      uncondition(self.model),
+                                      self.guide, *args, **kwargs)
         return {k: v[0] for k, v in trace.items()}
 
     @cached_property
@@ -102,13 +104,17 @@ class GraphicalImportancePara(ParaMonad):
         return {"mutable_state": self.mutable_state,
                 "optim_state": self.optim_state}
 
-    def setup_step(self, data, *args, **kwargs):
+    def setup_step(self, datamodule: DataModule, stage: str=""):
+        for batch in getattr(datamodule, stage + "_dataloader")():
+            data = batch[0]
+            break
+
         from numpyro.handlers import replay, seed, substitute, trace
         self._rng, model_seed, guide_seed = random.split(self._rng, 3)
         init_model = seed(self.model, model_seed)
         init_guide = seed(self.guide, guide_seed)
         model_trace, guide_trace = get_importance_trace(init_model, init_guide,
-                                                        (data,), kwargs, {})
+                                                        (data,), {}, {})
 
         params, inv_transforms, self._mutable_state = {}, {}, {}
         for site in itertools.chain(guide_trace.values(), model_trace.values()):
@@ -139,12 +145,12 @@ class GraphicalImportancePara(ParaMonad):
                not site.get("is_observed", False):
                 latents[name] = site["value"]
         model_deps, guide_deps = get_nonreparam_deps(
-            init_model, init_guide, (data,), kwargs, params, latents=latents
+            init_model, init_guide, (data,), {}, params, latents=latents
         )
         self.tracer.setup(guide_deps, model_deps, guide_trace, model_trace)
 
         from src.utils import get_model_relations
-        self._relations = get_model_relations(init_model, (data,), kwargs)
+        self._relations = get_model_relations(init_model, (data,), {})
         for var, parents in self._relations["sample_sample"].items():
             self._graph.add_node(var)
             for par in parents:
@@ -170,7 +176,7 @@ class GraphicalImportancePara(ParaMonad):
             mutables = {}
         loss, self._rng, state = self._evaluate(data, mutables, self.parameters,
                                                 self.rng)
-        return {"loss": loss, "log_w": state["log_w"]}, state["mutable_state"]
+        return {"loss": loss, "log_w": state["log_w"]}
 
     def train_step(self, data, *args, mutables=None):
         if mutables is None:
@@ -178,13 +184,13 @@ class GraphicalImportancePara(ParaMonad):
         loss, self.optim_state, self._rng, state = self._update(
             data, mutables, self.optim_state, self.rng
         )
-        self._mutable_state = state["mutable_state"]
+        self._mutable_state = state["mutables"]
         self.trace = state["trace"]
-        return {"loss": loss, "log_w": state["log_w"]}, state["mutable_state"]
+        return {"loss": loss, "log_w": state["log_w"]}
 
     def valid_step(self, data, *args, mutables=None):
         if mutables is None:
             mutables = {}
         loss, self._rng, state = self._evaluate(data, mutables, self.parameters,
                                                 self.rng)
-        return {"loss": loss, "log_w": state["log_w"]}, state["mutable_state"]
+        return {"loss": loss, "log_w": state["log_w"]}

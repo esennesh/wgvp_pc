@@ -82,7 +82,6 @@ class Trainer:
         checkpoint = np.load(resume_path, allow_pickle=True).item()
         self.epoch = checkpoint['epoch'] + 1
         self.monitor_best = checkpoint['monitor_best']
-        datamodule.resume(checkpoint['datamodule'])
 
         try:
             monad.load(checkpoint)
@@ -103,8 +102,7 @@ class Trainer:
         state = {
             'epoch': epoch,
             'monitor_best': self.monitor_best,
-            **monad.save(),
-            'datamodule': datamodule.save()
+            **monad.save()
         }
         filename = str(self.checkpoint_dir + '/checkpoint-epoch{}'.format(epoch))
         os.makedirs(self.checkpoint_dir, exist_ok=True)
@@ -114,7 +112,7 @@ class Trainer:
             np.save(best_path, state, allow_pickle=True)
             self.logger.info("Saving current best: model_best ...")
 
-    def _train_epoch(self, monad, data_loader, mutables, epoch):
+    def _train_epoch(self, monad, data_loader, epoch):
         """
         Training logic for an epoch
 
@@ -129,17 +127,12 @@ class Trainer:
         for batch_idx, batch in track(enumerate(data_loader), auto_refresh=False,
                                       description="Training (Epoch %d)" % epoch,
                                       total=len(data_loader), transient=True):
-            if mutables:
-                indices = batch[-1]
-                batch = (*batch, mutables.get_parameters(indices))
-            metrics, mutable_updates = monad.train_step(*batch)
+            metrics = monad.train_step(*batch)
             loss = metrics['loss'].item()
 
             self.writer.set_step(epoch * len(data_loader) + batch_idx)
             for met in self.metrics:
                 self.train_metrics.update(met, metrics[met])
-            if mutables:
-                mutables.set_parameters(indices, mutable_updates)
 
         return self.train_metrics.result()
 
@@ -150,24 +143,14 @@ class Trainer:
 
         dataloader = datamodule.valid_dataloader() if valid else\
                      datamodule.test_dataloader()
-        mutables = datamodule.train_mutables if valid else\
-                   datamodule.test_mutables
-        for batch in dataloader:
-            monad.setup_step(*batch)
-            break
+        monad.setup_step(datamodule, stage="valid" if valid else "test")
 
         metrics = defaultdict(lambda: [])
         step = monad.valid_step if valid else monad.test_step
         for batch_idx, batch in enumerate(dataloader):
-            if mutables:
-                indices = batch[-1]
-                batch = (*batch, mutables.get_parameters(indices))
-
-            batch_metrics, mutable_updates = step(*batch)
+            batch_metrics = step(*batch)
             for k, v in batch_metrics.items():
                 metrics[k].append(v)
-            if mutables:
-                mutables.set_parameters(indices, mutable_updates)
         return {k: np.mean(vs) for k, vs in metrics.items()}
 
     def train(self, monad: ParaMonad, datamodule: DataModule,
@@ -181,18 +164,13 @@ class Trainer:
         not_improved_count = 0
         train_dataloader = datamodule.train_dataloader()
         valid_dataloader = datamodule.valid_dataloader()
-        for batch in train_dataloader:
-            monad.setup_step(*batch)
-            break
+        monad.setup_step(datamodule, stage="train")
 
         for epoch in range(self.epoch, self.epochs + 1):
-            train_result = self._train_epoch(monad, train_dataloader,
-                                             datamodule.train_mutables, epoch)
+            train_result = self._train_epoch(monad, train_dataloader, epoch)
             valid_result = {}
             if self.validate:
-                valid_result = self._valid_epoch(monad, valid_dataloader,
-                                                 datamodule.train_mutables,
-                                                 epoch)
+                valid_result = self._valid_epoch(monad, valid_dataloader, epoch)
 
             # save logged information into log dict
             log = {'epoch': epoch}
@@ -227,7 +205,7 @@ class Trainer:
             if epoch % self.save_period == 0:
                 self._save_checkpoint(monad, datamodule, epoch, save_best=best)
 
-    def _valid_epoch(self, monad, data_loader, mutables, epoch):
+    def _valid_epoch(self, monad, data_loader, epoch):
         """
         Validate after training an epoch
 
@@ -239,17 +217,12 @@ class Trainer:
         for batch_idx, batch in track(enumerate(data_loader), auto_refresh=False,
                                       description="Validating (Epoch %d)" % epoch,
                                       total=len(data_loader), transient=True):
-            if mutables:
-                indices = batch[-1]
-                batch = (*batch, mutables.get_parameters(indices))
-            metrics, mutable_updates = monad.valid_step(*batch)
+            metrics = monad.valid_step(*batch)
             loss = metrics['loss'].item()
 
             self.writer.set_step(epoch * len(data_loader) + batch_idx, 'valid')
             for met in self.metrics:
                 self.valid_metrics.update(met, metrics[met])
-            if mutables:
-                mutables.set_parameters(indices, mutable_updates)
 
         # add histogram of parameters to the tensorboard
         for name, par in flatten(monad.parameters):
