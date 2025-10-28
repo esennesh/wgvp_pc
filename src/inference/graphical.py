@@ -134,16 +134,16 @@ class ELBOTracer(ParticleTracer):
         self._guide_properties, self._model_properties = {}, {}
 
     def loss(self, *args, **kwargs):
-        objective = self(*args, **kwargs)
-        if objective["mutable_state"]:
+        traces, mutables = self(*args, **kwargs)
+        if mutables:
             log_ws = sum(jnp.sum(site[1], axis=-1) - jnp.sum(site[2], axis=-1)
-                         for name, site in objective["trace"].items())
+                         for name, site in traces.items())
         else:
             log_ws = jnp.array(0.0)
             # mapping from non-reparameterizable sample sites to cost terms influenced by each of them
             downstream_costs: Dict[str, MultiFrameTensor] =\
                 defaultdict(lambda: MultiFrameTensor())
-            for name, site in objective["trace"].items():
+            for name, site in traces.items():
                 log_ws = log_ws + jnp.sum(site[1], axis=-1)
                 for key in self._model_deps[name]:
                     downstream_costs[key].add((
@@ -165,14 +165,14 @@ class ELBOTracer(ParticleTracer):
                 downstream_cost = cost.sum_to(
                     self._guide_properties[node]["cond_indep_stack"]
                 )
-                log_q = objective["trace"][node][2]
+                log_q = traces[node][2]
                 surrogate = jnp.sum(
                     log_q * jax.lax.stop_gradient(downstream_cost), axis=-1
                 )
                 log_ws = log_ws + surrogate - jax.lax.stop_gradient(surrogate)
 
-        objective["log_w"] = log_ws
-        return jnp.mean(-log_ws), objective
+        return jnp.mean(-log_ws), {"log_w": log_ws, "mutables": mutables,
+                                   "trace": traces}
 
     def setup(self, guide_deps, model_deps, guide_trace, model_trace):
         self._guide_deps, self._model_deps = guide_deps, model_deps
