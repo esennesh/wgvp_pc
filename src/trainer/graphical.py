@@ -38,8 +38,9 @@ class GraphicalImportancePara(ParaMonad):
 
     def __call__(self, *args, **kwargs):
         self._rng, rng = random.split(self.rng)
-        trace = self.tracer(rng, self.parameters, uncondition(self.model),
-                            self.guide, *args, **kwargs)["trace"]
+        trace, mutables = self.tracer(rng, self.parameters,
+                                      uncondition(self.model),
+                                      self.guide, *args, **kwargs)
         return {k: v[0] for k, v in trace.items()}
 
     @cached_property
@@ -175,7 +176,7 @@ class GraphicalImportancePara(ParaMonad):
             mutables = {}
         loss, self._rng, state = self._evaluate(data, mutables, self.parameters,
                                                 self.rng)
-        return {"loss": loss, "log_w": state["log_w"]}, state["mutable_state"]
+        return {"loss": loss, "log_w": state["log_w"]}
 
     def train_step(self, data, *args, mutables=None):
         if mutables is None:
@@ -183,13 +184,13 @@ class GraphicalImportancePara(ParaMonad):
         loss, self.optim_state, self._rng, state = self._update(
             data, mutables, self.optim_state, self.rng
         )
-        self._mutable_state = state["mutable_state"]
+        self._mutable_state = state["mutables"]
         self.trace = state["trace"]
-        return {"loss": loss, "log_w": state["log_w"]}, state["mutable_state"]
+        return {"loss": loss, "log_w": state["log_w"]}
 
     def valid_step(self, data, *args, mutables=None):
         if mutables is None:
             mutables = {}
         loss, self._rng, state = self._evaluate(data, mutables, self.parameters,
                                                 self.rng)
-        return {"loss": loss, "log_w": state["log_w"]}, state["mutable_state"]
+        return {"loss": loss, "log_w": state["log_w"]}
