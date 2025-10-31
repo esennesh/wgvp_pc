@@ -28,7 +28,7 @@ class GraphicalImportancePara(ParaMonad):
         self._guide = guide
         self._lr = lr
         self._model = model
-        self.mutable_state = None
+        self._mutable_state = None
         self.optim_state = None
         self.optimizer = numpyro.optim.Adam(step_size=lr)
         self._relations = {}
@@ -36,7 +36,7 @@ class GraphicalImportancePara(ParaMonad):
         self.trace = None
         self._tracer = tracer
 
-    def __call__(self, *args, **kwargs):
+    def __call__(self, *args, stage="train", **kwargs):
         self._rng, rng = random.split(self.rng)
         trace, mutables = self.tracer(rng, self.parameters,
                                       uncondition(self.model),
@@ -59,8 +59,12 @@ class GraphicalImportancePara(ParaMonad):
         return self._guide
 
     def load(self, checkpoint: Dict[str, Any]):
-        self.mutable_state = checkpoint["mutable_state"]
+        self._mutable_state = checkpoint["mutable_state"]
         self.optim_state = checkpoint["optim_state"]
+
+    @property
+    def mutable_state(self):
+        return self._mutable_state
 
     @property
     def tracer(self):
@@ -171,26 +175,20 @@ class GraphicalImportancePara(ParaMonad):
             return loss, optim_state, next_rng, state
         return fn
 
-    def test_step(self, data, *args, mutables=None):
-        if mutables is None:
-            mutables = {}
-        loss, self._rng, state = self._evaluate(data, mutables, self.parameters,
+    def test_step(self, data, *args):
+        loss, self._rng, state = self._evaluate(data, {}, self.parameters,
                                                 self.rng)
         return {"loss": loss, "log_w": state["log_w"]}
 
-    def train_step(self, data, *args, mutables=None):
-        if mutables is None:
-            mutables = {}
+    def train_step(self, data, *args):
         loss, self.optim_state, self._rng, state = self._update(
-            data, mutables, self.optim_state, self.rng
+            data, {}, self.optim_state, self.rng
         )
         self._mutable_state = state["mutables"]
         self.trace = state["trace"]
         return {"loss": loss, "log_w": state["log_w"]}
 
-    def valid_step(self, data, *args, mutables=None):
-        if mutables is None:
-            mutables = {}
-        loss, self._rng, state = self._evaluate(data, mutables, self.parameters,
+    def valid_step(self, data, *args):
+        loss, self._rng, state = self._evaluate(data, {}, self.parameters,
                                                 self.rng)
         return {"loss": loss, "log_w": state["log_w"]}
