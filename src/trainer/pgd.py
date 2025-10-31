@@ -22,8 +22,7 @@ from src.utils import uncondition
 from .svi import SviPara
 
 class PgdPara(SviPara):
-    def __init__(self, data_shape, lr, model, elbo: ELBO, rng, guide=None,
-                 lrq=1e-4):
+    def __init__(self, data_shape, lr, model, elbo: ELBO, rng, lrq=1e-4):
         self.test_particles, self.train_particles = None, None
         super().__init__(data_shape, AutoLangevin(model, lr=lrq), lr, model,
                          elbo, rng)
