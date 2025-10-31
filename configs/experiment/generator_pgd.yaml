@@ -2,6 +2,7 @@
 
 defaults:
   - override /data: mnist
+  - override /guide: null
   - override /model: vae
   - override /monad: pgd
 
