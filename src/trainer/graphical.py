@@ -28,7 +28,7 @@ class GraphicalImportancePara(ParaMonad):
         self._guide = guide
         self._lr = lr
         self._model = model
-        self._mutable_state = None
+        self._mutable_state = {}
         self.optim_state = None
         self.optimizer = numpyro.optim.Adam(step_size=lr)
         self._relations = {}
@@ -46,9 +46,9 @@ class GraphicalImportancePara(ParaMonad):
     @cached_property
     def _evaluate(self):
         @jax.jit
-        def fn(data, mutables, params, rng):
+        def fn(data, params, rng):
             next_rng, rng = random.split(rng)
-            params.update(jax.lax.stop_gradient(mutables))
+            params.update(jax.lax.stop_gradient(self.mutable_state))
             loss, state = self.tracer.loss(rng, params, self.model, self.guide,
                                            data)
             return loss, next_rng, state
@@ -132,7 +132,7 @@ class GraphicalImportancePara(ParaMonad):
                 self._mutable_state[site["name"]] = site["value"]
 
         if not self.mutable_state:
-            self._mutable_state = None
+            self._mutable_state = {}
         self._constrain_fn = partial(transform_fn, inv_transforms)
         # we convert weak types like float to float32/float64
         # to avoid recompiling body_fn later
@@ -163,10 +163,10 @@ class GraphicalImportancePara(ParaMonad):
     @cached_property
     def _update(self):
         @jax.jit
-        def fn(data, mutables, optim_state, rng):
+        def fn(data, optim_state, rng):
             next_rng, rng = random.split(rng)
             def loss_fn(params):
-                params.update(jax.lax.stop_gradient(mutables))
+                params.update(jax.lax.stop_gradient(self.mutable_state))
                 return self.tracer.loss(rng, params, self.model, self.guide,
                                         data)
             (loss, state), optim_state = self.optimizer.eval_and_update(
@@ -176,19 +176,19 @@ class GraphicalImportancePara(ParaMonad):
         return fn
 
     def test_step(self, data, *args):
-        loss, self._rng, state = self._evaluate(data, {}, self.parameters,
-                                                self.rng)
+        loss, self._rng, state = self._evaluate(data, self.parameters, self.rng)
+        self._mutable_state = state["mutables"]
         return {"loss": loss, "log_w": state["log_w"]}
 
     def train_step(self, data, *args):
         loss, self.optim_state, self._rng, state = self._update(
-            data, {}, self.optim_state, self.rng
+            data, self.optim_state, self.rng
         )
         self._mutable_state = state["mutables"]
         self.trace = state["trace"]
         return {"loss": loss, "log_w": state["log_w"]}
 
     def valid_step(self, data, *args):
-        loss, self._rng, state = self._evaluate(data, {}, self.parameters,
-                                                self.rng)
+        loss, self._rng, state = self._evaluate(data, self.parameters, self.rng)
+        self._mutable_state = state["mutables"]
         return {"loss": loss, "log_w": state["log_w"]}
