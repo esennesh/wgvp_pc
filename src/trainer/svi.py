@@ -47,6 +47,7 @@ class SviPara(ParaMonad):
             self.svi_state = self.svi.init(self._rng, data)
         else:
             self.svi.init(self.svi_state.rng_key, data)
+        return self.svi_state
 
     @staticmethod
     @partial(jit, static_argnums=0)
