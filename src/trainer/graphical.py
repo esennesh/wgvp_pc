@@ -160,6 +160,8 @@ class GraphicalImportancePara(ParaMonad):
             for par in parents:
                 self._graph.add_edge(par, var)
 
+        return guide_trace, model_trace
+
     @cached_property
     def _update(self):
         @jax.jit
