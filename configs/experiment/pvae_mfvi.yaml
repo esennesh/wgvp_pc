@@ -1,0 +1,22 @@
+# @package _global_
+
+defaults:
+  - override /guide: auto_mixtures
+  - override /model: pvae
+  - override /monad: batchvi
+
+monad:
+  local_optim:
+    _target_: optax.adam
+    learning_rate: 1e-3
+  optim:
+    _target_: optax.adam
+    learning_rate: 1e-4
+  rng: 123
+  tracer:
+    _target_: src.inference.graphical.ELBOTracer
+    num_particles: 32
+
+trainer:
+  epochs: 1000
+  save_period: 500
