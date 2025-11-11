@@ -7,6 +7,7 @@ import networkx as nx
 import numpyro
 from numpyro.distributions import constraints
 from numpyro.distributions.transforms import biject_to
+from numpyro.infer.autoguide import AutoGuide
 from numpyro.infer.elbo import get_nonreparam_deps
 from numpyro.infer import Predictive
 from numpyro.infer.util import (get_importance_trace, helpful_support_errors,
@@ -21,6 +22,8 @@ from src.utils import uncondition
 class GraphicalImportancePara(ParaMonad):
     def __init__(self, data_shape, guide, tracer: ParticleTracer, lr,
                  model, rng):
+        if isinstance(guide, partial) or issubclass(guide, AutoGuide):
+            guide = guide(model)
         if not isinstance(rng, jax.Array):
             rng = random.key(rng)
         self._constrain_fn = None
