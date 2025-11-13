@@ -19,10 +19,19 @@ from src.data import DataModule
 from src.inference.graphical import ParticleTracer
 from src.utils import uncondition
 
+def _is_autoguide(g):
+    import abc
+    if isinstance(g, abc.ABCMeta) and issubclass(g, AutoGuide):
+        return True
+    if isinstance(g, partial):
+        if isinstance(g.func, abc.ABCMeta) and issubclass(g.func, AutoGuide):
+            return True
+    return False
+
 class GraphicalImportancePara(ParaMonad):
     def __init__(self, data_shape, guide, tracer: ParticleTracer, lr,
                  model, rng):
-        if isinstance(guide, partial) or issubclass(guide, AutoGuide):
+        if _is_autoguide(guide):
             guide = guide(model)
         if not isinstance(rng, jax.Array):
             rng = random.key(rng)
