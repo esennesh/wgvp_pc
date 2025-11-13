@@ -139,7 +139,7 @@ class ELBOTracer(ParticleTracer):
                 defaultdict(lambda: MultiFrameTensor())
             for name, site in traces.items():
                 log_ws = log_ws + jnp.sum(site[1], axis=-1)
-                for key in self._model_deps[name]:
+                for key in self._model_deps.get(name, []):
                     downstream_costs[key].add((
                         self._model_properties[name]["cond_indep_stack"],
                         site[1]

@@ -1,23 +1,19 @@
 from functools import cached_property, partial
 import itertools
 import jax
-import jax.numpy as jnp
 import jax.random as random
 import networkx as nx
 import numpyro
-from numpyro.distributions import constraints
-from numpyro.distributions.transforms import biject_to
 from numpyro.infer.autoguide import AutoGuide
 from numpyro.infer.elbo import get_nonreparam_deps
 from numpyro.infer import Predictive
-from numpyro.infer.util import (get_importance_trace, helpful_support_errors,
-                                transform_fn)
+
 from typing import Any, Dict
 
 from .para import ParaMonad
 from src.data import DataModule
 from src.inference.graphical import ParticleTracer
-from src.utils import uncondition
+from src.utils import initialize_traces, uncondition
 
 def _is_autoguide(g):
     import abc
@@ -45,7 +41,6 @@ class GraphicalImportancePara(ParaMonad):
         self.optimizer = numpyro.optim.Adam(step_size=lr)
         self._relations = {}
         self._rng = rng
-        self.trace = None
         self._tracer = tracer
 
     def __call__(self, *args, stage="train", **kwargs):
@@ -120,59 +115,45 @@ class GraphicalImportancePara(ParaMonad):
         return {"mutable_state": self.mutable_state,
                 "optim_state": self.optim_state}
 
-    def setup_step(self, datamodule: DataModule):
-        for batch in datamodule.test_dataloader():
-            data = batch[0]
-            break
-
-        from numpyro.handlers import replay, seed, substitute, trace
-        self._rng, model_seed, guide_seed = random.split(self._rng, 3)
-        init_model = seed(self.model, model_seed)
-        init_guide = seed(self.guide, guide_seed)
-        model_trace, guide_trace = get_importance_trace(init_model, init_guide,
-                                                        (data,), {}, {})
-
-        params, inv_transforms, self._mutable_state = {}, {}, {}
-        for site in itertools.chain(guide_trace.values(), model_trace.values()):
-            if site["type"] == "param":
-                constraint = site["kwargs"].pop("constraint", constraints.real)
-                with helpful_support_errors(site):
-                    transform = biject_to(constraint)
-                inv_transforms[site["name"]] = transform
-                params[site["name"]] = transform.inv(site["value"])
-            elif site["type"] == "mutable":
-                self._mutable_state[site["name"]] = site["value"]
-
-        if not self.mutable_state:
-            self._mutable_state = {}
-        self._constrain_fn = partial(transform_fn, inv_transforms)
-        # we convert weak types like float to float32/float64
-        # to avoid recompiling body_fn later
-        params, self._mutable_state = jax.tree.map(
-            lambda x: jax.lax.convert_element_type(x, jnp.result_type(x)),
-            (params, self._mutable_state),
-        )
-        if not self.optim_state:
-            self.optim_state = self.optimizer.init(params)
+    def _setup_graph(self, *args, **kwargs):
+        state = initialize_traces(self.model, self.guide, self._rng, {}, *args,
+                                  **kwargs)
+        self._constrain_fn, self._mutable_state, self._rng =\
+            state.constrain_fn, state.mutables, state.rng
+        guide_trace, model_trace = state.guide_trace, state.model_trace
 
         latents = {}
         for name, site in guide_trace.items():
-            if site["type"] == "sample" and\
-               not site.get("is_observed", False):
+            if site["type"] == "sample" and not site.get("is_observed", False):
                 latents[name] = site["value"]
-        model_deps, guide_deps = get_nonreparam_deps(
-            init_model, init_guide, (data,), {}, params, latents=latents
-        )
+
+        from numpyro.handlers import replay, seed
+        self._rng, model_seed, guide_seed = random.split(self._rng, 3)
+        init_guide = replay(seed(self.guide, guide_seed), guide_trace)
+        init_model = replay(seed(self.model, model_seed), model_trace)
+        model_deps, guide_deps = get_nonreparam_deps(init_model, init_guide,
+                                                     args, kwargs, state.params,
+                                                     latents=latents)
         self.tracer.setup(guide_deps, model_deps, guide_trace, model_trace)
 
         from src.utils import get_model_relations
-        self._relations = get_model_relations(init_model, (data,), {})
+        self._relations = get_model_relations(init_model, args, kwargs)
         for var, parents in self._relations["sample_sample"].items():
             self._graph.add_node(var)
             for par in parents:
                 self._graph.add_edge(par, var)
+        return state
 
-        return guide_trace, model_trace
+    def setup_step(self, datamodule: DataModule):
+        for batch in getattr(datamodule, stage + "_dataloader")():
+            data = batch[0]
+            break
+
+        state = self._setup_graph(data)
+        if not self.optim_state:
+            self.optim_state = self.optimizer.init(state.params)
+
+        return state.guide_trace, state.model_trace
 
     @cached_property
     def _update(self):
@@ -199,7 +180,6 @@ class GraphicalImportancePara(ParaMonad):
             data, self.optim_state, self.rng
         )
         self._mutable_state = state["mutables"]
-        self.trace = state["trace"]
         return {"loss": loss, "log_w": state["log_w"]}
 
     def valid_step(self, data, *args, **kwargs):
