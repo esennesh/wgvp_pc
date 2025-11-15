@@ -6,15 +6,11 @@ defaults:
   - override /model: vae
   - override /monad: batchvi
 
-data:
-  shuffle: false
-  split_seed: 123
-
 guide:
-  lr: 1e-4
+  lr: 1e-3
 
 monad:
-  lr: 1e-2
+  lr: 1e-3
 
 trainer:
   epochs: 500
