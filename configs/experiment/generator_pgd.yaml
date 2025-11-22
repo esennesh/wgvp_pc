@@ -2,9 +2,20 @@
 
 defaults:
   - override /data: mnist
-  - override /guide: null
+  - override /guide: langevin
   - override /model: vae
-  - override /monad: pgd
+  - override /monad: batchvi
+
+data:
+  shuffle: false
+  split_seed: 123
+
+guide:
+  lr: 1e-4
+
+monad:
+  lr: 1e-2
 
 trainer:
-  epochs: 100
+  epochs: 500
+  save_period: 250
