@@ -1,8 +1,0 @@
-_target_: src.trainer.PgdPara
-
-lr: 1e-2
-lrq: 1e-4
-rng: 123
-elbo:
-  _target_: src.inference.elbo.TraceVectorized_ELBO
-  num_particles: 4
