@@ -189,12 +189,12 @@ class GraphicalImportancePara(ParaMonad):
             return loss, optim_state, next_rng, state
         return fn
 
-    def test_step(self, data, *args):
+    def test_step(self, data, *args, **kwargs):
         loss, self._rng, state = self._evaluate(data, self.parameters, self.rng)
         self._mutable_state = state["mutables"]
         return {"loss": loss, "log_w": state["log_w"]}
 
-    def train_step(self, data, *args):
+    def train_step(self, data, *args, **kwargs):
         loss, self.optim_state, self._rng, state = self._update(
             data, self.optim_state, self.rng
         )
@@ -202,7 +202,7 @@ class GraphicalImportancePara(ParaMonad):
         self.trace = state["trace"]
         return {"loss": loss, "log_w": state["log_w"]}
 
-    def valid_step(self, data, *args):
+    def valid_step(self, data, *args, **kwargs):
         loss, self._rng, state = self._evaluate(data, self.parameters, self.rng)
         self._mutable_state = state["mutables"]
         return {"loss": loss, "log_w": state["log_w"]}
