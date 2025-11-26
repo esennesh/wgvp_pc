@@ -60,9 +60,9 @@ class GraphicalImportancePara(ParaMonad):
         @jax.jit
         def fn(data, params, rng):
             next_rng, rng = random.split(rng)
-            params.update(jax.lax.stop_gradient(self.mutable_state))
-            loss, state = self.tracer.loss(rng, params, self.model, self.guide,
-                                           data)
+            mutable_map = jax.lax.stop_gradient(self.mutable_state)
+            loss, state = self.tracer.loss(rng, params, mutable_map, self.model,
+                                           self.guide, data)
             return loss, next_rng, state
         return fn
 
@@ -180,9 +180,9 @@ class GraphicalImportancePara(ParaMonad):
         def fn(data, optim_state, rng):
             next_rng, rng = random.split(rng)
             def loss_fn(params):
-                params.update(jax.lax.stop_gradient(self.mutable_state))
-                return self.tracer.loss(rng, params, self.model, self.guide,
-                                        data)
+                mutable_map = jax.lax.stop_gradient(self.mutable_state)
+                return self.tracer.loss(rng, params, mutable_map, self.model,
+                                        self.guide, data)
             (loss, state), optim_state = self.optimizer.eval_and_update(
                 loss_fn, optim_state
             )
