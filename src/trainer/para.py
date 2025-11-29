@@ -47,6 +47,10 @@ class BatchParameters:
         self._length = length
         self._tensors = Trie()
 
+    @property
+    def axis(self):
+        return self._axis
+
     def __contains__(self, key: str) -> bool:
         return key in self.tensors
 
@@ -77,8 +81,9 @@ class BatchParameters:
 
     def set_parameter(self, idx: np.ndarray, key: str, val: Array):
         self._require(key, val.shape)
-        indices = idx.reshape((1, len(idx)) +\
-                              (1,) * len(val.shape[self._axis+1:]))
+        index_shape = [1] * len(val.shape)
+        index_shape[self._axis] = len(idx)
+        indices = idx.reshape(index_shape)
         np.put_along_axis(self.tensors[key],
                           np.broadcast_to(indices, val.shape), np.array(val),
                           self._axis)
