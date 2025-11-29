@@ -71,7 +71,7 @@ class Trainer:
     def metric_fns(self) -> List[str]:
         raise NotImplementedError
 
-    def _resume_checkpoint(self, monad, datamodule, resume_path):
+    def _resume_checkpoint(self, monad, resume_path):
         """
         Resume from saved checkpoints
 
@@ -91,7 +91,7 @@ class Trainer:
 
         self.logger.info("Checkpoint loaded. Resume training from epoch {}".format(self.epoch))
 
-    def _save_checkpoint(self, monad, datamodule, epoch, save_best=False):
+    def _save_checkpoint(self, monad, epoch, save_best=False):
         """
         Saving checkpoints
 
@@ -139,7 +139,7 @@ class Trainer:
     def test(self, monad: ParaMonad, datamodule: DataModule,
              ckpt_path: Optional[str]=None, valid: bool=True):
         if ckpt_path is not None:
-            self._resume_checkpoint(monad, datamodule, ckpt_path)
+            self._resume_checkpoint(monad, ckpt_path)
 
         dataloader = datamodule.valid_dataloader() if valid else\
                      datamodule.test_dataloader()
@@ -159,7 +159,7 @@ class Trainer:
         Full training logic
         """
         if ckpt_path is not None:
-            self._resume_checkpoint(monad, datamodule, ckpt_path)
+            self._resume_checkpoint(monad, ckpt_path)
 
         not_improved_count = 0
         train_dataloader = datamodule.train_dataloader()
@@ -203,7 +203,7 @@ class Trainer:
                     break
 
             if epoch % self.save_period == 0:
-                self._save_checkpoint(monad, datamodule, epoch, save_best=best)
+                self._save_checkpoint(monad, epoch, save_best=best)
 
     def _valid_epoch(self, monad, data_loader, epoch):
         """
