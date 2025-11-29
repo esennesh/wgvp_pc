@@ -58,14 +58,14 @@ class PgdPara(SviPara):
         return {**state, "test_particles": self.test_particles.pickle(),
                 "train_particles": self.train_particles.pickle()}
 
-    def setup_step(self, datamodule: DataModule, stage: str=""):
+    def setup_step(self, datamodule: DataModule):
         if self.test_particles is None:
             self.test_particles = BatchParameters(len(datamodule.data_test))
         if self.train_particles is None:
             self.train_particles = BatchParameters(len(datamodule.data_train) +\
                                                    len(datamodule.data_val),
                                                    axis=1)
-        return super().setup_step(datamodule, stage=stage)
+        return super().setup_step(datamodule)
 
     def train_step(self, data, target, indices):
         for site in self.svi.guide.prototype_trace:

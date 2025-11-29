@@ -138,7 +138,7 @@ class Trainer:
 
     def test(self, monad: ParaMonad, datamodule: DataModule,
              ckpt_path: Optional[str]=None, valid: bool=True):
-        monad.setup_step(datamodule, stage="valid" if valid else "test")
+        monad.setup_step(datamodule)
         if ckpt_path is not None:
             self._resume_checkpoint(monad, ckpt_path)
 
@@ -157,7 +157,7 @@ class Trainer:
         """
         Full training logic
         """
-        monad.setup_step(datamodule, stage="train")
+        monad.setup_step(datamodule)
         if ckpt_path is not None:
             self._resume_checkpoint(monad, ckpt_path)
 

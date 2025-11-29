@@ -120,8 +120,8 @@ class GraphicalImportancePara(ParaMonad):
         return {"mutable_state": self.mutable_state,
                 "optim_state": self.optim_state}
 
-    def setup_step(self, datamodule: DataModule, stage: str=""):
-        for batch in getattr(datamodule, stage + "_dataloader")():
+    def setup_step(self, datamodule: DataModule):
+        for batch in datamodule.test_dataloader():
             data = batch[0]
             break
 

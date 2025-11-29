@@ -26,7 +26,7 @@ class ParaMonad:
         raise NotImplementedError
 
     @abstractmethod
-    def setup_step(self, datamodule: DataModule, stage: str=""):
+    def setup_step(self, datamodule: DataModule):
         raise NotImplementedError
 
     @abstractmethod

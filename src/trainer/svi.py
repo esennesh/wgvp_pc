@@ -38,8 +38,8 @@ class SviPara(ParaMonad):
     def save(self):
         return {"svi_state": self.svi_state}
 
-    def setup_step(self, datamodule: DataModule, stage: str=""):
-        for batch in getattr(datamodule, stage + "_dataloader")():
+    def setup_step(self, datamodule: DataModule):
+        for batch in datamodule.test_dataloader():
             data = batch[0]
             break
 
