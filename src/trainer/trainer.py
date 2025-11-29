@@ -138,13 +138,12 @@ class Trainer:
 
     def test(self, monad: ParaMonad, datamodule: DataModule,
              ckpt_path: Optional[str]=None, valid: bool=True):
+        monad.setup_step(datamodule, stage="valid" if valid else "test")
         if ckpt_path is not None:
             self._resume_checkpoint(monad, ckpt_path)
 
         dataloader = datamodule.valid_dataloader() if valid else\
                      datamodule.test_dataloader()
-        monad.setup_step(datamodule, stage="valid" if valid else "test")
-
         metrics = defaultdict(lambda: [])
         step = monad.valid_step if valid else monad.test_step
         for batch_idx, batch in enumerate(dataloader):
@@ -158,13 +157,13 @@ class Trainer:
         """
         Full training logic
         """
+        monad.setup_step(datamodule, stage="train")
         if ckpt_path is not None:
             self._resume_checkpoint(monad, ckpt_path)
 
         not_improved_count = 0
         train_dataloader = datamodule.train_dataloader()
         valid_dataloader = datamodule.valid_dataloader()
-        monad.setup_step(datamodule, stage="train")
 
         for epoch in range(self.epoch, self.epochs + 1):
             train_result = self._train_epoch(monad, train_dataloader, epoch)
