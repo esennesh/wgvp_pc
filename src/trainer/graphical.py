@@ -31,17 +31,21 @@ class GraphicalImportancePara(ParaMonad):
             guide = guide(model)
         if not isinstance(rng, jax.Array):
             rng = random.key(rng)
+        self._buffer_state = {}
         self._constrain_fn = None
         self._graph = nx.DiGraph()
         self._guide = guide
         self._lr = lr
         self._model = model
-        self._mutable_state = {}
         self.optim_state = None
         self.optimizer = numpyro.optim.Adam(step_size=lr)
         self._relations = {}
         self._rng = rng
         self._tracer = tracer
+
+    @property
+    def buffer_state(self):
+        return self._buffer_state
 
     def __call__(self, *args, stage="train", **kwargs):
         self._rng, rng = random.split(self.rng)
@@ -55,9 +59,9 @@ class GraphicalImportancePara(ParaMonad):
         @jax.jit
         def fn(data, params, rng):
             next_rng, rng = random.split(rng)
-            mutable_map = jax.lax.stop_gradient(self.mutable_state)
-            loss, state = self.tracer.loss(rng, params, mutable_map, self.model,
-                                           self.guide, data)
+            particle_params = jax.lax.stop_gradient(self.buffer_state)
+            loss, state = self.tracer.loss(rng, params, particle_params,
+                                           self.model, self.guide, data)
             return loss, next_rng, state
         return fn
 
@@ -66,12 +70,8 @@ class GraphicalImportancePara(ParaMonad):
         return self._guide
 
     def load(self, checkpoint: Dict[str, Any]):
-        self._mutable_state = checkpoint["mutable_state"]
+        self._buffer_state = checkpoint["buffer_state"]
         self.optim_state = checkpoint["optim_state"]
-
-    @property
-    def mutable_state(self):
-        return self._mutable_state
 
     @property
     def tracer(self):
@@ -112,13 +112,13 @@ class GraphicalImportancePara(ParaMonad):
         return self._rng
 
     def save(self):
-        return {"mutable_state": self.mutable_state,
+        return {"buffer_state": self.buffer_state,
                 "optim_state": self.optim_state}
 
     def _setup_graph(self, *args, **kwargs):
         state = initialize_traces(self.model, self.guide, self._rng, {}, *args,
                                   **kwargs)
-        self._constrain_fn, self._mutable_state, self._rng =\
+        self._constrain_fn, self._buffer_state, self._rng =\
             state.constrain_fn, state.mutables, state.rng
         guide_trace, model_trace = state.guide_trace, state.model_trace
 
@@ -151,6 +151,7 @@ class GraphicalImportancePara(ParaMonad):
 
         state = self._setup_graph(data)
         if not self.optim_state:
+            self._buffer_state = buffers
             self.optim_state = self.optimizer.init(state.params)
 
         return state.guide_trace, state.model_trace
@@ -161,9 +162,9 @@ class GraphicalImportancePara(ParaMonad):
         def fn(data, optim_state, rng):
             next_rng, rng = random.split(rng)
             def loss_fn(params):
-                mutable_map = jax.lax.stop_gradient(self.mutable_state)
-                return self.tracer.loss(rng, params, mutable_map, self.model,
-                                        self.guide, data)
+                particle_params = jax.lax.stop_gradient(self.buffer_state)
+                return self.tracer.loss(rng, params, particle_params,
+                                        self.model, self.guide, data)
             (loss, state), optim_state = self.optimizer.eval_and_update(
                 loss_fn, optim_state
             )
@@ -172,17 +173,17 @@ class GraphicalImportancePara(ParaMonad):
 
     def test_step(self, data, *args, **kwargs):
         loss, self._rng, state = self._evaluate(data, self.parameters, self.rng)
-        self._mutable_state = state["mutables"]
+        self._buffer_state.update(state["mutables"])
         return {"loss": loss, "log_w": state["log_w"]}
 
     def train_step(self, data, *args, **kwargs):
         loss, self.optim_state, self._rng, state = self._update(
             data, self.optim_state, self.rng
         )
-        self._mutable_state = state["mutables"]
+        self._buffer_state.update(state["mutables"])
         return {"loss": loss, "log_w": state["log_w"]}
 
     def valid_step(self, data, *args, **kwargs):
         loss, self._rng, state = self._evaluate(data, self.parameters, self.rng)
-        self._mutable_state = state["mutables"]
+        self._buffer_state.update(state["mutables"])
         return {"loss": loss, "log_w": state["log_w"]}
