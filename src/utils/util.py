@@ -1,3 +1,4 @@
+from collections import namedtuple
 import jax
 import json
 from importlib.util import find_spec
@@ -8,6 +9,8 @@ import pandas as pd
 from pathlib import Path
 from itertools import repeat
 from collections import OrderedDict
+from numpyro.infer.util import (get_importance_trace, helpful_support_errors,
+                                transform_fn)
 from omegaconf import DictConfig, OmegaConf, open_dict
 import rich
 import rich.syntax
@@ -15,6 +18,43 @@ import rich.tree
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 log = logging.LoggerAdapter(logger=logging.getLogger(__name__))
+
+InitialGraph = namedtuple("InitialGraph", ["constrain_fn", "guide_trace",
+                                           "model_trace", "mutables", "params",
+                                           "rng"])
+
+def initialize_traces(model, guide, rng, params, *args, **kwargs):
+    from functools import partial
+    import itertools
+    import jax.numpy as jnp
+    from jax import random
+    from numpyro.distributions import constraints
+    from numpyro.distributions.transforms import biject_to
+    from numpyro.handlers import seed, substitute, trace
+    rng, model_seed, guide_seed = random.split(rng, 3)
+    init_model = seed(model, model_seed)
+    init_guide = seed(guide, guide_seed)
+    model_trace, guide_trace = get_importance_trace(init_model, init_guide,
+                                                    args, kwargs, params)
+
+    params, inv_transforms, mutables = {}, {}, {}
+    for site in itertools.chain(guide_trace.values(), model_trace.values()):
+        if site["type"] == "param":
+            constraint = site["kwargs"].pop("constraint", constraints.real)
+            with helpful_support_errors(site):
+                transform = biject_to(constraint)
+            inv_transforms[site["name"]] = transform
+            params[site["name"]] = transform.inv(site["value"])
+        elif site["type"] == "mutable":
+            mutables[site["name"]] = site["value"]
+
+    constrain_fn = partial(transform_fn, inv_transforms)
+    params, mutables = jax.tree.map(
+        lambda x: jax.lax.convert_element_type(x, jnp.result_type(x)),
+        (params, mutables),
+    )
+    return InitialGraph(constrain_fn, guide_trace, model_trace, mutables,
+                        params, rng)
 
 def get_model_relations(model, model_args=None, model_kwargs=None):
     """

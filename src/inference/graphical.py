@@ -17,23 +17,20 @@ class ParticleTracer:
     def __init__(self, num_particles: int=1):
         self.num_particles = num_particles
 
-    def __call__(self, rng_key, param_map, model, guide, *args, **kwargs):
+    def __call__(self, rng_key, param_map, particle_params, model, guide,
+                 *args, **kwargs):
         param_map = param_map.copy()
-        mutable_map = {}
-        for name, param in list(param_map.items()):
-            if isinstance(param, dict) and "value" in param:
-                mutable_map[name] = param
-                if param["value"].shape[0] != self.num_particles:
-                    param["value"] = jnp.broadcast_to(
-                        param["value"],
-                        (self.num_particles, *param["value"].shape)
-                    )
-                del param_map[name]
+        particle_params = jax.tree.map(
+            lambda leaf: jnp.broadcast_to(leaf, (self.num_particles,
+                                                 *leaf.shape))
+                         if leaf.shape[0] != self.num_particles else leaf,
+            particle_params
+        )
 
-        def single_trace(rng_key, mutable_map, particle=None):
+        def single_trace(rng_key, pwise_params, particle=None):
             import functools
 
-            param_map.update(mutable_map)
+            param_map.update(pwise_params)
             particle_guide, particle_model = guide, model
 
             model_seed, guide_seed = random.split(rng_key)
@@ -85,25 +82,22 @@ class ParticleTracer:
         rng_keys = random.split(rng_key, self.num_particles)
         particles = jnp.arange(self.num_particles)
         particle_traces = jax.vmap(single_trace)
-        return particle_traces(rng_keys, mutable_map, particle=particles)
+        return particle_traces(rng_keys, particle_params, particle=particles)
 
-    def log_probs(self, model, params, traces, *args, **kwargs):
+    def log_probs(self, model, params, particle_params, traces, *args,
+                  **kwargs):
         params = params.copy()
-        mutable_map = {}
-        for name, param in list(params.items()):
-            if isinstance(param, dict) and "value" in param:
-                mutable_map[name] = param
-                if param["value"].shape[0] != self.num_particles:
-                    param["value"] = jnp.broadcast_to(
-                        param["value"],
-                        (self.num_particles, *param["value"].shape)
-                    )
-                del params[name]
+        particle_params = jax.tree.map(
+            lambda leaf: jnp.broadcast_to(leaf, (self.num_particles,
+                                                 *leaf.shape))
+                         if leaf.shape[0] != self.num_particles else leaf,
+            particle_params
+        )
 
-        def single_log_prob(mutable_map, trace, particle=None):
+        def single_log_prob(pwise_params, trace, particle=None):
             import functools
 
-            params.update(mutable_map)
+            params.update(pwise_params)
             params.update(trace)
             particle_model = model
             if particle is not None:
@@ -116,7 +110,7 @@ class ParticleTracer:
 
         particles = jnp.arange(self.num_particles)
         particle_log_probs = jax.vmap(single_log_prob)
-        return particle_log_probs(mutable_map, traces, particle=particles)
+        return particle_log_probs(particle_params, traces, particle=particles)
 
     def loss(self, *args, **kwargs):
         traces, mutables = self(*args, **kwargs)
@@ -145,7 +139,7 @@ class ELBOTracer(ParticleTracer):
                 defaultdict(lambda: MultiFrameTensor())
             for name, site in traces.items():
                 log_ws = log_ws + jnp.sum(site[1], axis=-1)
-                for key in self._model_deps[name]:
+                for key in self._model_deps.get(name, []):
                     downstream_costs[key].add((
                         self._model_properties[name]["cond_indep_stack"],
                         site[1]
