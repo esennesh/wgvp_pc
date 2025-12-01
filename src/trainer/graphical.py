@@ -39,6 +39,7 @@ class GraphicalImportancePara(ParaMonad):
         self._model = model
         self.optim_state = None
         self.optimizer = numpyro.optim.Adam(step_size=lr)
+        self._particle_params = set({})
         self._relations = {}
         self._rng = rng
         self._tracer = tracer
@@ -49,7 +50,14 @@ class GraphicalImportancePara(ParaMonad):
 
     def __call__(self, *args, stage="train", **kwargs):
         self._rng, rng = random.split(self.rng)
-        trace, mutables = self.tracer(rng, self.parameters,
+        particle_params = jax.lax.stop_gradient(self.buffer_state)
+        particle_params.update({
+            param: value for param, value in self.parameters.items()
+            if param in self._particle_params
+        })
+        params = {param: value for param, value in self.parameters.items()
+                  if param not in self._particle_params}
+        trace, mutables = self.tracer(rng, params, particle_params,
                                       uncondition(self.model),
                                       self.guide, *args, **kwargs)
         return {k: v[0] for k, v in trace.items()}
@@ -60,6 +68,12 @@ class GraphicalImportancePara(ParaMonad):
         def fn(data, params, rng):
             next_rng, rng = random.split(rng)
             particle_params = jax.lax.stop_gradient(self.buffer_state)
+            particle_params.update({
+                param: value for param, value in params.items()
+                if param in self._particle_params
+            })
+            params = {param: value for param, value in params.items()
+                      if param not in self._particle_params}
             loss, state = self.tracer.loss(rng, params, particle_params,
                                            self.model, self.guide, data)
             return loss, next_rng, state
@@ -150,9 +164,22 @@ class GraphicalImportancePara(ParaMonad):
             break
 
         state = self._setup_graph(data)
+        buffers = state.mutables
+        params = {}
+        for param, value in state.params.items():
+            site = state.guide_trace.get(param, None)
+            if not site:
+                site = state.model_trace[param]
+            if site["kwargs"].get("particle", False):
+                self._particle_params.add(param)
+            if site["kwargs"].get("requires_grad", True):
+                params[param] = value
+            else:
+                buffers[param] = value
+
         if not self.optim_state:
             self._buffer_state = buffers
-            self.optim_state = self.optimizer.init(state.params)
+            self.optim_state = self.optimizer.init(params)
 
         return state.guide_trace, state.model_trace
 
@@ -163,6 +190,12 @@ class GraphicalImportancePara(ParaMonad):
             next_rng, rng = random.split(rng)
             def loss_fn(params):
                 particle_params = jax.lax.stop_gradient(self.buffer_state)
+                particle_params.update({
+                    param: value for param, value in params.items()
+                    if param in self._particle_params
+                })
+                params = {param: value for param, value in params.items()
+                          if param not in self._particle_params}
                 return self.tracer.loss(rng, params, particle_params,
                                         self.model, self.guide, data)
             (loss, state), optim_state = self.optimizer.eval_and_update(
