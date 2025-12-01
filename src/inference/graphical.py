@@ -135,7 +135,7 @@ class ELBOTracer(ParticleTracer):
 
     def loss(self, *args, **kwargs):
         traces, mutables = self(*args, **kwargs)
-        if mutables:
+        if jax.tree.leaves(mutables):
             log_ws = sum(jnp.sum(site[1], axis=-1) - jnp.sum(site[2], axis=-1)
                          for name, site in traces.items())
         else:
