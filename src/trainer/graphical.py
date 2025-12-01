@@ -145,7 +145,7 @@ class GraphicalImportancePara(ParaMonad):
         return state
 
     def setup_step(self, datamodule: DataModule):
-        for batch in getattr(datamodule, stage + "_dataloader")():
+        for batch in datamodule.test_dataloader():
             data = batch[0]
             break
 
