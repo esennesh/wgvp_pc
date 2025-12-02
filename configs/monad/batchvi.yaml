@@ -1,0 +1,8 @@
+_target_: src.trainer.batchvi.BatchVariationalPara
+
+local_lr: 1e-2
+lr: 1e-2
+rng: 123
+tracer:
+  _target_: src.inference.graphical.ELBOTracer
+  num_particles: 4

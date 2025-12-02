@@ -69,15 +69,18 @@ class AutoLangevin(AutoGuide):
             event_dim = self._event_dims[name]
             init_loc = self._init_locs[name]
             with ExitStack() as stack:
+                prefix = ""
                 for frame in site["cond_indep_stack"]:
                     stack.enter_context(plates[frame.name])
+                    prefix += frame.name + "_"
 
                 site_loc = numpyro.primitives.mutable(
-                    "{}_{}_loc".format(name, self.prefix), {"value": init_loc}
+                    "{}{}_{}_loc".format(prefix, name, self.prefix),
+                    {"value": init_loc}
                 )
                 update = jax.lax.stop_gradient(
-                    self._grad_log_densities[name](site_loc["value"],
-                                                   *args, **kwargs)
+                    self._grad_log_densities[name](site_loc["value"], *args,
+                                                   **kwargs)
                 )
 
                 site_fn = dist.Normal(site_loc["value"] + self._lr * update,
@@ -105,13 +108,13 @@ class AutoLangevin(AutoGuide):
                 if site["type"] != "sample" or site["is_observed"]:
                     continue
 
-                init_loc = self._init_locs[site]
                 site_loc = numpyro.primitives.mutable(
-                    "{}_{}_loc".format(name, self.prefix), {"value": init_loc}
+                    "{}_{}_loc".format(name, self.prefix),
+                    {"value": init_loc}
                 )
                 update = self._grad_log_densities[name](site_loc["value"],
                                                         *args, **kwargs)
-                loc = site_loc + self._lr * update
+                loc = site_loc["value"] + self._lr * update
                 density = dist.Normal(loc, (2 * self._lr).sqrt())
                 samples[site] = numpyro.sample(site,
                                                density.expand_by(sample_shape))

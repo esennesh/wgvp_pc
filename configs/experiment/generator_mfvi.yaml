@@ -2,16 +2,14 @@
 
 defaults:
   - override /data: mnist
-  - override /guide: langevin
+  - override /guide: auto_normal
   - override /model: vae
   - override /monad: batchvi
 
-guide:
-  lr: 1e-3
-
 monad:
   lr: 1e-3
+  local_lr: 1e-3
 
 trainer:
-  epochs: 500
-  save_period: 250
+  epochs: 1000
+  save_period: 200
