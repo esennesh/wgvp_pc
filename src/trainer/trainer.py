@@ -86,7 +86,7 @@ class Trainer:
         try:
             monad.load(checkpoint)
         except Exception as ex:
-            self.logger.exception(ex.msg)
+            self.logger.exception(str(ex))
             raise ex
 
         self.logger.info("Checkpoint loaded. Resume training from epoch {}".format(self.epoch))
