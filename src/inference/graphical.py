@@ -84,6 +84,13 @@ class ParticleTracer:
         particle_traces = jax.vmap(single_trace)
         return particle_traces(rng_keys, particle_params, particle=particles)
 
+    def guided_log_weights(self, rng_key, param_map, particle_params, model,
+                           guide, *args, **kwargs):
+        traces = self(rng_key, param_map, particle_params, model, guide, *args,
+                      **kwargs)
+        return {k: (log_p, log_q) for k, (_, log_p, log_q, _) in traces.items()
+                if log_p is not 0.}
+
     def log_probs(self, model, params, particle_params, traces, *args,
                   **kwargs):
         params = params.copy()
