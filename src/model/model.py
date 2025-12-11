@@ -185,11 +185,18 @@ def pvae_guide(xs, encoder: PVaeEncoder):
     with numpyro.plate("batch", xs.shape[0]):
         return numpyro.sample("z", dist.Poisson(jnp.exp(u)).to_event(1))
 
-def pvae_model(xs, decoder: nnx.Linear, z_dim=1024, x_side=28):
+class PVaePrior(nnx.Module):
+    def __init__(self, z_dim, *, rngs: nnx.Rngs):
+        self.log_rate = rngs.uniform(shape=(z_dim,), minval=-6., maxval=-4.)
+
+    def __call__(self, rngs=None):
+        return jnp.exp(self.log_rate)
+
+def pvae_model(xs, decoder: nnx.Linear, prior: PVaePrior):
     decoder = nnx_module("decoder", decoder)
     scale = jnp.exp(numpyro.param("log_scale", jnp.zeros(())))
     with numpyro.plate("batch", xs.shape[0]):
-        z = numpyro.sample("z", dist.Poisson(1).expand([z_dim]).to_event(1))
+        z = numpyro.sample("z", dist.Poisson(prior()).to_event(1))
         loc = decoder(z).reshape(xs.shape)
         return numpyro.sample("x", dist.Normal(loc, scale).to_event(3), obs=xs)
 

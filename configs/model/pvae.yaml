@@ -7,5 +7,9 @@ decoder:
   rngs:
     _target_: flax.nnx.Rngs
     default: 1234
-x_side: 28
-z_dim: 1568
+prior:
+  _target_: src.model.model.PVaePrior
+  z_dim: 1568
+  rngs:
+    _target_: flax.nnx.Rngs
+    default: 5678
