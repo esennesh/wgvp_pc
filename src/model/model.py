@@ -181,9 +181,9 @@ class PVaeEncoder(nnx.Module):
 
 def pvae_guide(xs, encoder: PVaeEncoder):
     encoder = nnx_module("encoder", encoder)
-    log_u = encoder(xs)
+    u = encoder(xs)
     with numpyro.plate("batch", xs.shape[0]):
-        return numpyro.sample("z", dist.Poisson(jnp.exp(log_u)).to_event(1))
+        return numpyro.sample("z", dist.Poisson(jnp.exp(u)).to_event(1))
 
 def pvae_model(xs, decoder: nnx.Linear, z_dim=1024, x_side=28):
     decoder = nnx_module("decoder", decoder)
