@@ -7,6 +7,8 @@ import numpyro
 from numpyro.infer.autoguide import AutoGuide
 from numpyro.infer.elbo import get_nonreparam_deps
 from numpyro.infer import Predictive
+from omegaconf.dictconfig import DictConfig
+import optax
 
 from typing import Any, Dict
 
@@ -25,8 +27,8 @@ def _is_autoguide(g):
     return False
 
 class GraphicalImportancePara(ParaMonad):
-    def __init__(self, data_shape, guide, tracer: ParticleTracer, lr,
-                 model, rng):
+    def __init__(self, data_shape, guide, model, optim, rng,
+                 tracer: ParticleTracer):
         if _is_autoguide(guide):
             guide = guide(model)
         if not isinstance(rng, jax.Array):
@@ -35,10 +37,14 @@ class GraphicalImportancePara(ParaMonad):
         self._constrain_fn = None
         self._graph = nx.DiGraph()
         self._guide = guide
-        self._lr = lr
         self._model = model
         self.optim_state = None
-        self.optimizer = numpyro.optim.Adam(step_size=lr)
+        if isinstance(optim, numpyro.optim._NumPyroOptim):
+            self.optimizer = optim
+        else:
+            if isinstance(optim, dict) or isinstance(optim, DictConfig):
+                optim = optax.chain(*optim.values())
+            self.optimizer = numpyro.optim.optax_to_numpyro(optim)
         self._particle_params = set({})
         self._relations = {}
         self._rng = rng
