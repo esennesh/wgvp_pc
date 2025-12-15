@@ -3,3 +3,6 @@
 defaults:
   - override /guide: pvae
   - override /model: pvae
+
+monad:
+  lr: 5e-5
