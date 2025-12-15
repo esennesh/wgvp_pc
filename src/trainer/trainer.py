@@ -223,6 +223,8 @@ class Trainer:
             for met in self.metrics:
                 self.valid_metrics.update(met, metrics[met])
 
+        monad.validate(self.valid_metrics.avg("loss"))
+
         # add histogram of parameters to the tensorboard
         for name, par in flatten(monad.parameters):
 
