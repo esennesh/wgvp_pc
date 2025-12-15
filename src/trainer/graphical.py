@@ -28,7 +28,8 @@ def _is_autoguide(g):
 
 class GraphicalImportancePara(ParaMonad):
     def __init__(self, data_shape, guide, model, optim, rng,
-                 tracer: ParticleTracer):
+                 tracer: ParticleTracer,
+                 scheduler: optax.GradientTransformation=None):
         if _is_autoguide(guide):
             guide = guide(model)
         if not isinstance(rng, jax.Array):
@@ -48,6 +49,8 @@ class GraphicalImportancePara(ParaMonad):
         self._particle_params = set({})
         self._relations = {}
         self._rng = rng
+        self.scheduler = scheduler
+        self.schedule_state = None
         self._tracer = tracer
 
     @property
@@ -187,6 +190,9 @@ class GraphicalImportancePara(ParaMonad):
             self._buffer_state = buffers
             self.optim_state = self.optimizer.init(params)
 
+        if self.scheduler and not self.schedule_state:
+            self.schedule_state = self.scheduler.init(params)
+
         return state.guide_trace, state.model_trace
 
     @cached_property
@@ -204,9 +210,16 @@ class GraphicalImportancePara(ParaMonad):
                           if param not in self._particle_params}
                 return self.tracer.loss(rng, params, particle_params,
                                         self.model, self.guide, data)
-            (loss, state), optim_state = self.optimizer.eval_and_update(
-                loss_fn, optim_state
+
+            # Replicating the Numpyro eval_and_update() method.
+            (loss, state), grads = numpyro.optim._value_and_grad(
+                loss_fn, x=self.optimizer.get_params(optim_state)
             )
+            # Intervene by scaling the grads according to LR scheduler
+            if self.scheduler and self.schedule_state:
+                grads = optax.tree.scale(self.schedule_state.scale, grads)
+            # Actually update
+            optim_state = self.optimizer.update(grads, optim_state, value=loss)
             return loss, optim_state, next_rng, state
         return fn
 
@@ -221,6 +234,12 @@ class GraphicalImportancePara(ParaMonad):
         )
         self._buffer_state.update(state["mutables"])
         return {"loss": loss, "log_w": state["log_w"]}
+
+    def validate(self, loss: float):
+        if self.scheduler:
+            _, self.schedule_state = self.scheduler.update(
+                updates=self.parameters, state=self.schedule_state, value=loss
+            )
 
     def valid_step(self, data, *args, **kwargs):
         loss, self._rng, state = self._evaluate(data, self.parameters, self.rng)
