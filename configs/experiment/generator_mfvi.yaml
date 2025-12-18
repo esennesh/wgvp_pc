@@ -6,10 +6,6 @@ defaults:
   - override /model: vae
   - override /monad: batchvi
 
-monad:
-  lr: 1e-3
-  local_lr: 1e-3
-
 trainer:
   epochs: 1000
   save_period: 200
