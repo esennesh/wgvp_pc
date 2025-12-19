@@ -1,8 +1,6 @@
 from functools import cached_property, partial
 import itertools
 import jax
-from jax.example_libraries.optimizers import (JoinPoint, pack_optimizer_state,
-                                              unpack_optimizer_state)
 import jax.numpy as jnp
 import jax.random as random
 import networkx as nx
@@ -13,24 +11,34 @@ from numpyro.infer.elbo import get_nonreparam_deps
 from numpyro.infer import Predictive
 from numpyro.infer.util import (get_importance_trace, helpful_support_errors,
                                 transform_fn)
+from omegaconf.dictconfig import DictConfig
+import optax
 from typing import Any, Dict
 
 from .graphical import GraphicalImportancePara
 from .para import BatchParameters, ParaMonad
 from src.data import DataModule
 from src.inference.graphical import ParticleTracer
-from src.utils import initialize_traces
+from src.utils import (initialize_traces, flatten_optim_state,
+                       unflatten_optim_state)
 
 class BatchVariationalPara(GraphicalImportancePara):
-    def __init__(self, data_shape, guide, local_lr, lr, model, rng,
-                 tracer: ParticleTracer, batch_axis=0, plate="batch"):
+    def __init__(self, data_shape, guide, local_optim, model, optim, rng,
+                 tracer: ParticleTracer, batch_axis=0, plate="batch",
+                 scheduler: optax.GradientTransformation=None):
         self._batch_axis = batch_axis
-        self.local_optimizer = numpyro.optim.Adam(step_size=local_lr)
+        if isinstance(local_optim, numpyro.optim._NumPyroOptim):
+            self.local_optimizer = local_optim
+        else:
+            if isinstance(local_optim, dict) or\
+               isinstance(local_optim, DictConfig):
+                local_optim = optax.chain(*local_optim.values())
+            self.local_optimizer = numpyro.optim.optax_to_numpyro(local_optim)
         self.local_optim_state = None
         self.local_parameters = None
         self._plate = plate
         self.stage_parameters, self.stage_buffers = {}, {}
-        super().__init__(data_shape, guide, tracer, lr, model, rng)
+        super().__init__(data_shape, guide, model, optim, rng, tracer)
 
     def __call__(self, data, indices, *args, stage="train", **kwargs):
         from src.utils import uncondition
@@ -80,16 +88,18 @@ class BatchVariationalPara(GraphicalImportancePara):
             for addr in reversed(key.split('/')):
                 val = {addr: val}
             buffers.update(val)
+
         local_params = self.stage_parameters[stage].get_parameters(indices)
-        local_state = unpack_optimizer_state(self.local_optim_state[1])
-        local_state = pack_optimizer_state({
-            param: JoinPoint(jax.tree.map_with_path(
-                lambda path, _: local_params[
-                    jax.tree_util.keystr((param, *path), separator='/')
-                ], join.subtree
-            )) for param, join in local_state.items()
-        })
-        local_optim_state = (self.local_optim_state[0], local_state)
+        def select_param(path, tensor):
+            key = jax.tree_util.keystr(path, separator='/', simple=False)
+            if key in local_params:
+                return local_params[key]
+            return tensor
+        local_optim_state = flatten_optim_state(self.local_optim_state)
+        local_optim_state = jax.tree.map_with_path(select_param,
+                                                   local_optim_state)
+        local_optim_state = unflatten_optim_state(local_optim_state,
+                                                  self.local_optim_state)
         return (self.optim_state, local_optim_state, buffers)
 
     def _parameters(self, optim_state, local=False):
@@ -109,26 +119,27 @@ class BatchVariationalPara(GraphicalImportancePara):
         saver = "train" if stage == "valid" else stage
 
         self.local_optim_state = local_optim_state
-        local_params = unpack_optimizer_state(local_optim_state[1])
-        for param, join in local_params.items():
-            for k, v in jax.tree.leaves_with_path(join.subtree):
-                key = param + "/" + jax.tree_util.keystr(k, separator='/')
-                if param in self._particle_params and\
-                   v.shape[0] != self.tracer.num_particles:
-                    v = jnp.broadcast_to(v, (self.tracer.num_particles,
-                                             *v.shape))
-                self.stage_parameters[saver].set_parameter(indices, key, v)
+        local_optim_state = flatten_optim_state(local_optim_state)
+        leaves, _ = jax.tree.flatten_with_path(local_optim_state)
+        for key, v in leaves:
+            param = jax.tree_util.keystr([key[-1]], simple=True)
+            if param not in self.local_parameters:
+                continue
+            if param in self._particle_params and\
+               v.shape[0] != self.tracer.num_particles:
+                v = jnp.broadcast_to(v, (self.tracer.num_particles, *v.shape))
+            key = jax.tree_util.keystr(key, separator='/', simple=False)
+            self.stage_parameters[saver].set_parameter(indices, key, v)
 
-        for buffer, subtree in local_buffers.items():
-            for k, v in jax.tree.leaves_with_path(subtree):
-                if buffer in self._particle_params and\
-                   v.shape[0] != self.tracer.num_particles:
-                    v = jnp.broadcast_to(v, (self.tracer.num_particles,
-                                             *v.shape))
-
-                key = buffer + '/' + jax.tree_util.keystr(k, separator='/',
-                                                          simple=True)
-                self.stage_buffers[saver].set_parameter(indices, key, v)
+        for key, v in jax.tree.leaves_with_path(local_buffers):
+            buffer = jax.tree_util.keystr([key[-1]], simple=True)
+            key = param + "/" + jax.tree_util.keystr(k, separator='/',
+                                                     simple=True)
+            if buffer in self._particle_params and\
+               v.shape[0] != self.tracer.num_particles:
+                v = jnp.broadcast_to(v, (self.tracer.num_particles,
+                                         *v.shape))
+            self.stage_buffers[saver].set_parameter(indices, key, v)
 
         if global_optim_state is not None:
             self.optim_state = global_optim_state
@@ -178,7 +189,7 @@ class BatchVariationalPara(GraphicalImportancePara):
                 self._buffer_state = global_buffers
                 optim_state = self.optimizer.init(global_params)
 
-            local_optim_state = self.optimizer.init(local_params)
+            local_optim_state = self.local_optimizer.init(local_params)
             if self.local_parameters is None:
                 self.local_parameters = set(local_params.keys())
             self.save_batch(indices, local_optim_state, local_buffers,
