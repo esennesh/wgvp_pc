@@ -106,6 +106,12 @@ class BatchVariationalPara(GraphicalImportancePara):
         optimizer = self.local_optimizer if local else self.optimizer
         return self._constrain_fn(optimizer.get_params(optim_state))
 
+    @property
+    def parameters(self):
+        params = self._parameters(self.optim_state)
+        params.update(**self._parameters(self.local_optim_state, True))
+        return params
+
     def save(self):
         state = super().save()
         return {**state, "batch_axis": self._batch_axis,

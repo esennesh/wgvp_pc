@@ -2,7 +2,7 @@
 
 defaults:
   - override /data: mnist
-  - override /guide: auto_normal
+  - override /guide: auto_mixtures
   - override /model: vae
   - override /monad: batchvi
 
