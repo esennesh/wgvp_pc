@@ -12,6 +12,7 @@ import pandas as pd
 from pathlib import Path
 from itertools import repeat
 from collections import OrderedDict
+from numpyro.infer.autoguide import AutoGuide
 from numpyro.infer.util import (get_importance_trace, helpful_support_errors,
                                 transform_fn)
 from omegaconf import DictConfig, OmegaConf, open_dict
@@ -21,6 +22,17 @@ import rich.tree
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 log = logging.LoggerAdapter(logger=logging.getLogger(__name__))
+
+def is_autoguide(g):
+    import abc
+    from functools import partial
+
+    if isinstance(g, abc.ABCMeta) and issubclass(g, AutoGuide):
+        return True
+    if isinstance(g, partial):
+        if isinstance(g.func, abc.ABCMeta) and issubclass(g.func, AutoGuide):
+            return True
+    return False
 
 def flatten_optim_state(state):
     if isinstance(state[1], OptimizerState):
