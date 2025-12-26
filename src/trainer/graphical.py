@@ -1,10 +1,10 @@
-from functools import cached_property, partial
+from functools import cached_property
 import itertools
 import jax
 import jax.random as random
 import networkx as nx
 import numpyro
-from numpyro.infer.autoguide import AutoGuide
+
 from numpyro.infer.elbo import get_nonreparam_deps
 from numpyro.infer import Predictive
 from omegaconf.dictconfig import DictConfig
@@ -15,22 +15,13 @@ from typing import Any, Dict
 from .para import ParaMonad
 from src.data import DataModule
 from src.inference.graphical import ParticleTracer
-from src.utils import initialize_traces, uncondition
-
-def _is_autoguide(g):
-    import abc
-    if isinstance(g, abc.ABCMeta) and issubclass(g, AutoGuide):
-        return True
-    if isinstance(g, partial):
-        if isinstance(g.func, abc.ABCMeta) and issubclass(g.func, AutoGuide):
-            return True
-    return False
+from src.utils import initialize_traces, is_autoguide, uncondition
 
 class GraphicalImportancePara(ParaMonad):
     def __init__(self, data_shape, guide, model, optim, rng,
                  tracer: ParticleTracer,
                  scheduler: optax.GradientTransformation=None):
-        if _is_autoguide(guide):
+        if is_autoguide(guide):
             guide = guide(model)
         if not isinstance(rng, jax.Array):
             rng = random.key(rng)
