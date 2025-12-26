@@ -55,12 +55,14 @@ class ParticleTracer:
             graph_state = {
                 name: (site["value"], site["log_prob"],
                        guide_trace[name]["log_prob"] if name in guide_trace\
-                       else 0., site["is_observed"])
+                       else jnp.zeros_like(site["log_prob"]),
+                       site["is_observed"])
                 for name, site in model_trace.items()
                 if site["type"] == "sample"
             }
             graph_state.update({
-                name: (site["value"], 0., site["log_prob"], False)
+                name: (site["value"], jnp.zeros_like(site["log_prob"]),
+                       site["log_prob"], False)
                       for name, site in guide_trace.items()
                       if site["type"] == "sample" and name not in graph_state
             })
