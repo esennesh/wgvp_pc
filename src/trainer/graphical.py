@@ -15,7 +15,7 @@ from typing import Any, Dict
 from .para import ParaMonad
 from src.data import DataModule
 from src.inference.graphical import ParticleTracer
-from src.utils import initialize_traces, is_autoguide, uncondition
+from src.utils import initialize_traces, is_autoguide, reconstruct
 
 class GraphicalImportancePara(ParaMonad):
     def __init__(self, data_shape, guide, model, optim, rng,
@@ -58,7 +58,7 @@ class GraphicalImportancePara(ParaMonad):
         params = {param: value for param, value in self.parameters.items()
                   if param not in self._particle_params}
         trace, mutables = self.tracer(rng, params, particle_params,
-                                      uncondition(self.model),
+                                      reconstruct(self.model),
                                       self.guide, *args, **kwargs)
         return {k: v[0] for k, v in trace.items()}
 
