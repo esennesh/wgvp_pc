@@ -1,13 +1,12 @@
 _target_: src.inference.iterative.IterativeGuide
 _partial_: true
 guide:
-  _target_: src.inference.auto_mixtures.AutoMixtureProposal
+  _target_: src.inference.auto_mean_field.AutoMeanFieldProposal
   _partial_: true
-  num_particles: 2
 optim:
-  _target_: optax.adam
-  learning_rate: 1e-4
+  _target_: optax.yogi
+  learning_rate: 1e-2
 tracer:
-  _target_: src.inference.graphical.VarGradTracer
-  num_particles: 4
-num_iterations: 16
+  _target_: src.inference.graphical.OnlineVarGradTracer
+  num_particles: 10
+num_iterations: 100
