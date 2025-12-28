@@ -9,7 +9,7 @@ from typing import Any, Dict
 from .para import ParaMonad
 from src.data import DataModule
 from src.inference.elbo import TraceVectorized_ELBO
-from src.utils import uncondition
+from src.utils import reconstruct
 
 class SviPara(ParaMonad):
     def __init__(self, data_shape, guide, lr, model, elbo: ELBO, rng):
@@ -22,7 +22,7 @@ class SviPara(ParaMonad):
 
     def __call__(self, *args, **kwargs):
         predictive = Predictive(
-            uncondition(self.svi.model), guide=self.svi.guide,
+            reconstruct(self.svi.model), guide=self.svi.guide,
             num_samples=self.svi.loss.num_particles, batch_ndims=None,
             parallel=False, params=self.svi.get_params(self.svi_state)
         )
