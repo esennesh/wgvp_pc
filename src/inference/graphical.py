@@ -123,9 +123,10 @@ class ParticleTracer:
 
     def loss(self, *args, **kwargs):
         traces, mutables = self(*args, **kwargs)
-        log_ws = sum(site[1] - site[2] for name, site in traces.items())
-        return {"loss": jnp.mean(-log_ws), "log_w": log_ws,
-                "mutables": mutables, "trace": traces}
+        log_ws = sum(jnp.sum(site[1], axis=-1) - jnp.sum(site[2], axis=-1)
+                     for name, site in traces.items())
+        return jnp.mean(-log_ws), {"log_w": log_ws, "mutables": mutables,
+                                   "trace": traces}
 
     def setup(self, guide_deps, model_deps, guide_trace, model_trace):
         pass
