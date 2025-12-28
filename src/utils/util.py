@@ -260,10 +260,10 @@ def get_model_relations(model, model_args=None, model_kwargs=None):
         "observed": obs_sites,
     }
 
-class uncondition(numpyro.primitives.Messenger):
+class reconstruct(numpyro.primitives.Messenger):
     """
-    Messenger to force the value of observed nodes to be sampled from their
-    distribution, ignoring observations.
+    Messenger to force the value of observed nodes to their predictive maximum
+    a posteriori estimate, ignoring observations.
     """
 
     def __init__(self, fn: Optional[Callable] = None) -> None:
@@ -291,7 +291,7 @@ class uncondition(numpyro.primitives.Messenger):
             assert msg["infer"] is not None
             msg["infer"]["was_observed"] = True
             msg["infer"]["obs"] = msg["value"]
-            msg["value"] = None
+            msg["value"] = msg["fn"].mean
             msg["done"] = False
 
 def get_metric_value(metric_dict: Dict[str, Any], metric_name: Optional[str]) -> Optional[float]:
