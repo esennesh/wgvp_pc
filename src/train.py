@@ -66,6 +66,7 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         log.info("Starting training!")
         if cfg.get("debug", False):
             numpyro.enable_validation()
+            jax.config.update("jax_check_tracer_leaks", True)
             jax.config.update("jax_debug_nans", True)
             with jax.disable_jit():
                 trainer.train(monad, datamodule, ckpt_path=cfg.get("ckpt_path"))

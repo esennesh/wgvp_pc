@@ -55,12 +55,14 @@ class ParticleTracer:
             graph_state = {
                 name: (site["value"], site["log_prob"],
                        guide_trace[name]["log_prob"] if name in guide_trace\
-                       else 0., site["is_observed"])
+                       else jnp.zeros_like(site["log_prob"]),
+                       site["is_observed"])
                 for name, site in model_trace.items()
                 if site["type"] == "sample"
             }
             graph_state.update({
-                name: (site["value"], 0., site["log_prob"], False)
+                name: (site["value"], jnp.zeros_like(site["log_prob"]),
+                       site["log_prob"], False)
                       for name, site in guide_trace.items()
                       if site["type"] == "sample" and name not in graph_state
             })
@@ -83,6 +85,13 @@ class ParticleTracer:
         particles = jnp.arange(self.num_particles)
         particle_traces = jax.vmap(single_trace)
         return particle_traces(rng_keys, particle_params, particle=particles)
+
+    def guided_log_weights(self, rng_key, param_map, particle_params, model,
+                           guide, *args, **kwargs):
+        traces = self(rng_key, param_map, particle_params, model, guide, *args,
+                      **kwargs)
+        return {k: (log_p, log_q) for k, (_, log_p, log_q, _) in traces.items()
+                if log_p is not 0.}
 
     def log_probs(self, model, params, particle_params, traces, *args,
                   **kwargs):
@@ -114,9 +123,10 @@ class ParticleTracer:
 
     def loss(self, *args, **kwargs):
         traces, mutables = self(*args, **kwargs)
-        log_ws = sum(site[1] - site[2] for name, site in traces.items())
-        return {"loss": jnp.mean(-log_ws), "log_w": log_ws,
-                "mutables": mutables, "trace": traces}
+        log_ws = sum(jnp.sum(site[1], axis=-1) - jnp.sum(site[2], axis=-1)
+                     for name, site in traces.items())
+        return jnp.mean(-log_ws), {"log_w": log_ws, "mutables": mutables,
+                                   "trace": traces}
 
     def setup(self, guide_deps, model_deps, guide_trace, model_trace):
         pass

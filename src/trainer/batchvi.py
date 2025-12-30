@@ -41,7 +41,7 @@ class BatchVariationalPara(GraphicalImportancePara):
         super().__init__(data_shape, guide, model, optim, rng, tracer)
 
     def __call__(self, data, indices, *args, stage="train", **kwargs):
-        from src.utils import uncondition
+        from src.utils import reconstruct
 
         global_optim, local_optim, buffers = self.load_batch(indices, stage)
         params, particle_params = {}, {}
@@ -64,7 +64,7 @@ class BatchVariationalPara(GraphicalImportancePara):
 
         self._rng, rng = random.split(self.rng)
         trace, mutables = self.tracer(rng, params, particle_params,
-                                      uncondition(self.model), self.guide, data,
+                                      reconstruct(self.model), self.guide, data,
                                       **kwargs)
         return {k: v[0] for k, v in trace.items()}
 
