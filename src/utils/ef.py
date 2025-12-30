@@ -75,3 +75,31 @@ class ExponentialFamily(dist.Distribution):
     @property
     def variance(self) -> ArrayLike:
         return self._to_pyro().variance
+
+class Normal(ExponentialFamily):
+    arg_constraints = {"mean_x_precision": constraints.real,
+                       "negative_half_precision": constraints.less_than(0.)}
+    support = constraints.real
+    reparametrized_params = ["mean_x_precision", "negative_half_precision"]
+
+    def __init__(self, mean_x_precision, negative_half_precision):
+        mean_x_precision, negative_half_precision = promote_shapes(
+            mean_x_precision, negative_half_precision
+        )
+        batch_shape = jax.lax.broadcast_shapes(mean_x_precision.shape,
+                                               negative_half_precision.shape)
+        np = efax.NormalNP(mean_x_precision, negative_half_precision)
+
+        super().__init__(np, batch_shape=batch_shape)
+
+    @property
+    def mean_x_precision(self):
+        return self.np.mean_times_precision
+
+    @property
+    def negative_half_precision(self):
+        return self.np.negative_half_precision
+
+    def _to_pyro(self) -> dist.Distribution:
+        ep = self.np.to_exp()
+        return dist.Normal(ep.mean, jnp.sqrt(ep.second_moment))
