@@ -10,6 +10,8 @@ from numpyro.contrib.module import nnx_module
 import numpyro.distributions as dist
 import reversible_deq as rdeq
 
+from src.utils import ef
+
 # Takes pixel intensities of the attention window to parameters (mean,
 # standard deviation) of the distribution over the latent code, z_what.
 class WhatEncoder(nnx.Module):
@@ -323,8 +325,8 @@ def mnist_model(batch, hidden_dim=400, z_dim=100):
     decode = numpyro.module("decoder", decoder(hidden_dim, out_dim),
                             (batch_dim, z_dim))
     with numpyro.plate("batch", batch_dim):
-        z = numpyro.sample("z", dist.Normal(jnp.zeros((z_dim,)),
-                                            jnp.ones((z_dim,))).to_event(1))
+        loc, scale = jnp.zeros((z_dim,)), jnp.ones((z_dim,))
+        z = numpyro.sample("z", dist.Normal(loc, scale).to_event(1))
         img_loc = decode(z)
         return numpyro.sample("obs", dist.Bernoulli(img_loc).to_event(1),
                               obs=batch)
@@ -334,6 +336,6 @@ def mnist_guide(batch, hidden_dim=400, z_dim=100):
     batch_dim, out_dim = jnp.shape(batch)
     encode = numpyro.module("encoder", encoder(hidden_dim, z_dim),
                             (batch_dim, out_dim))
-    z_loc, z_std = encode(batch)
+    z_lambda1, z_lambda2 = encode(batch)
     with numpyro.plate("batch", batch_dim):
-        return numpyro.sample("z", dist.Normal(z_loc, z_std).to_event(1))
+        return numpyro.sample("z", ef.Normal(z_lambda1, -z_lambda2).to_event(1))
