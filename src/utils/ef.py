@@ -103,3 +103,22 @@ class Normal(ExponentialFamily):
     def _to_pyro(self) -> dist.Distribution:
         ep = self.np.to_exp()
         return dist.Normal(ep.mean, jnp.sqrt(ep.second_moment))
+
+class Poisson(ExponentialFamily):
+    arg_constraints = {"log_mean": constraints.real}
+    support = constraints.nonnegative_integer
+    reparametrized_params = []
+
+    def __init__(self, log_mean):
+        (log_mean,) = promote_shapes(log_mean)
+        batch_shape = log_mean.shape
+        np = efax.PoissonNP(log_mean)
+
+        super().__init__(np, batch_shape=batch_shape)
+
+    @property
+    def log_mean(self):
+        return self.np.log_mean
+
+    def _to_pyro(self) -> dist.Distribution:
+        return dist.Poisson(rate=self.np.to_exp().mean)
