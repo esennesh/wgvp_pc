@@ -21,6 +21,14 @@ class VariationalMixin(ABC):
     def loss_fn(self, log_ws):
         raise NotImplementedError
 
+class ELBOMixin(VariationalMixin):
+    def log_weights(self, traces, mutables):
+        return sum(jnp.sum(site[1], axis=-1) - jnp.sum(site[2], axis=-1)
+                   for name, site in traces.items())
+
+    def loss_fn(self, log_ws):
+        return jnp.mean(-log_ws)
+
 class ParticleTracer:
     def __init__(self, num_particles: int=1):
         self.num_particles = num_particles
