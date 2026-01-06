@@ -410,3 +410,6 @@ class AdaptiveParticleTracer(IwaeMixin, ParticleTracer):
         particles = jnp.arange(self.num_particles)
         particle_traces = jax.vmap(single_trace)
         return particle_traces(rng_keys, particle_params, particle=particles)
+
+class AdaptiveElboTracer(AdaptiveParticleTracer, ELBOTracer):
+    pass
