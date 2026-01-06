@@ -29,7 +29,7 @@ class ELBOMixin(VariationalMixin):
     def loss_fn(self, log_ws):
         return jnp.mean(-log_ws)
 
-class ParticleTracer:
+class ParticleTracer(ELBOMixin):
     def __init__(self, num_particles: int=1):
         self.num_particles = num_particles
 
@@ -139,10 +139,13 @@ class ParticleTracer:
 
     def loss(self, *args, **kwargs):
         traces, mutables = self(*args, **kwargs)
-        log_ws = sum(jnp.sum(site[1], axis=-1) - jnp.sum(site[2], axis=-1)
-                     for name, site in traces.items())
-        return jnp.mean(-log_ws), {"log_w": log_ws, "mutables": mutables,
-                                   "trace": traces}
+        for k, v in traces.items():
+            is_observed = jnp.broadcast_to(jnp.expand_dims(v[-1], axis=-1),
+                                           v[0].shape[:2])
+            traces[k] = v[:-1] + (is_observed,)
+        log_ws = self.log_weights(traces, mutables)
+        return self.loss_fn(log_ws), {"log_w": log_ws, "mutables": mutables,
+                                      "trace": traces}
 
     def setup(self, guide_deps, model_deps, guide_trace, model_trace):
         pass
