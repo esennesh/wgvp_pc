@@ -318,3 +318,6 @@ class VarGradMixin(VariationalMixin):
 
     def loss_fn(self, log_ws, traces):
         return jnp.var(-log_ws, axis=0, ddof=1.).sum() / 2
+
+class VarGradTracer(VarGradMixin, ParticleTracer):
+    pass
