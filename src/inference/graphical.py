@@ -1,3 +1,4 @@
+from abc import ABC
 from collections import defaultdict
 import jax
 import jax.numpy as jnp
@@ -12,6 +13,13 @@ from typing import Dict
 
 def configure_sample(msg: Message, /, **kwargs) -> Dict:
     return kwargs
+
+class VariationalMixin(ABC):
+    def log_weights(self, traces, mutables):
+        raise NotImplementedError
+
+    def loss_fn(self, log_ws):
+        raise NotImplementedError
 
 class ParticleTracer:
     def __init__(self, num_particles: int=1):
