@@ -329,3 +329,6 @@ class OnlineWeightMixin(VariationalMixin):
                              for name, site in traces.items())
         log_q = sum(site[2] for site in traces.values())
         return log_likelihood - log_q
+
+class OnlineVarGradTracer(OnlineWeightMixin, VarGradTracer):
+    pass
