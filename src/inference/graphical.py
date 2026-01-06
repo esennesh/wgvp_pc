@@ -156,8 +156,7 @@ class ELBOTracer(ParticleTracer):
         self._guide_deps, self._model_deps = None, None
         self._guide_properties, self._model_properties = {}, {}
 
-    def loss(self, *args, **kwargs):
-        traces, mutables = self(*args, **kwargs)
+    def log_weights(self, traces, mutables):
         if jax.tree.leaves(mutables):
             log_ws = sum(jnp.sum(site[1], axis=-1) - jnp.sum(site[2], axis=-1)
                          for name, site in traces.items())
@@ -193,9 +192,7 @@ class ELBOTracer(ParticleTracer):
                     log_q * jax.lax.stop_gradient(downstream_cost), axis=-1
                 )
                 log_ws = log_ws + surrogate - jax.lax.stop_gradient(surrogate)
-
-        return jnp.mean(-log_ws), {"log_w": log_ws, "mutables": mutables,
-                                   "trace": traces}
+        return log_ws
 
     def setup(self, guide_deps, model_deps, guide_trace, model_trace):
         self._guide_deps, self._model_deps = guide_deps, model_deps
