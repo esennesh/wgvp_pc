@@ -29,6 +29,10 @@ class ELBOMixin(VariationalMixin):
     def loss_fn(self, log_ws):
         return jnp.mean(-log_ws)
 
+class IwaeMixin(ELBOMixin):
+    def loss_fn(self, log_ws):
+        return -jax.nn.logmeanexp(log_ws)
+
 class ParticleTracer(ELBOMixin):
     def __init__(self, num_particles: int=1):
         self.num_particles = num_particles
