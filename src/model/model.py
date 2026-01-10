@@ -228,7 +228,8 @@ def mnist_normal_model(batch, hidden_dim=400, z_dim=100):
                             (batch_dim, z_dim))
     scale = jnp.exp(numpyro.param("log_scale", jnp.zeros(())))
     with numpyro.plate("batch", batch_dim):
-        z = numpyro.sample("z", dist.Normal(0, 1).expand([z_dim]).to_event(1))
+        z = numpyro.sample("z", dist.Normal(jnp.zeros(z_dim),
+                                            jnp.ones(z_dim)).to_event(1))
         img_loc = decode(z)
         return numpyro.sample("obs", dist.Normal(img_loc, scale).to_event(1),
                               obs=batch)
