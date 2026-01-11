@@ -147,8 +147,8 @@ class ParticleTracer(ELBOMixin):
                                            v[0].shape[:2])
             traces[k] = v[:-1] + (is_observed,)
         log_ws = self.log_weights(traces, mutables)
-        return self.loss_fn(log_ws), {"log_w": log_ws, "mutables": mutables,
-                                      "trace": traces}
+        return self.loss_fn(log_ws), {"log_w": log_ws.sum(axis=-1),
+                                      "mutables": mutables, "trace": traces}
 
     def setup(self, guide_deps, model_deps, guide_trace, model_trace):
         pass
