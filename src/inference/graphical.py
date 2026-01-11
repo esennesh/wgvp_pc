@@ -147,8 +147,8 @@ class ParticleTracer(ELBOMixin):
                                            v[0].shape[:2])
             traces[k] = v[:-1] + (is_observed,)
         log_ws = self.log_weights(traces, mutables)
-        return self.loss_fn(log_ws), {"log_w": log_ws, "mutables": mutables,
-                                      "trace": traces}
+        return self.loss_fn(log_ws), {"log_w": log_ws.sum(axis=-1),
+                                      "mutables": mutables, "trace": traces}
 
     def setup(self, guide_deps, model_deps, guide_trace, model_trace):
         pass
@@ -189,10 +189,17 @@ class ELBOTracer(ParticleTracer):
             downstream_cost = cost.sum_to(
                 self._guide_properties[node]["cond_indep_stack"]
             )
-            log_q = traces[node][2]
-            surrogate = log_q * jax.lax.stop_gradient(downstream_cost)
+            advantage = downstream_cost - downstream_cost.mean(axis=0)
+            surrogate = traces[node][2] * jax.lax.stop_gradient(advantage)
             log_ws = log_ws + surrogate - jax.lax.stop_gradient(surrogate)
         return log_ws
+
+    def loss_fn(self, log_ws):
+        reparameterized = all(site["reparameterized"] for site
+                              in self._guide_properties.values())
+        if reparameterized:
+            return super().loss_fn(log_ws)
+        return -(jnp.sum(log_ws, axis=0) / (log_ws.shape[0] - 1)).sum()
 
     def setup(self, guide_deps, model_deps, guide_trace, model_trace):
         self._guide_deps, self._model_deps = guide_deps, model_deps
