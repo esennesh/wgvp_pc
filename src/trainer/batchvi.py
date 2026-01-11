@@ -221,6 +221,7 @@ class BatchVariationalPara(GraphicalImportancePara):
         )
 
         self._setup_stage(datamodule, stage="test")
+        self._setup_stage(datamodule, stage="valid")
         return self._setup_stage(datamodule, stage="train")
 
     def _site_in_scope(self, site, site_type):
