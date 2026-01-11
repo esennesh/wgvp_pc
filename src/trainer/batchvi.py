@@ -158,7 +158,8 @@ class BatchVariationalPara(GraphicalImportancePara):
                 state = self._setup_graph(data)
             else:
                 state = initialize_traces(self.model, self.guide, self._rng,
-                                          self.parameters, data)
+                                          self._parameters(self.optim_state),
+                                          data)
             self._rng = state.rng
 
             local_buffers = {}
@@ -220,6 +221,7 @@ class BatchVariationalPara(GraphicalImportancePara):
         )
 
         self._setup_stage(datamodule, stage="test")
+        self._setup_stage(datamodule, stage="valid")
         return self._setup_stage(datamodule, stage="train")
 
     def _site_in_scope(self, site, site_type):

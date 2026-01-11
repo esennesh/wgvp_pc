@@ -23,11 +23,10 @@ class VariationalMixin(ABC):
 
 class ELBOMixin(VariationalMixin):
     def log_weights(self, traces, mutables):
-        return sum(jnp.sum(site[1], axis=-1) - jnp.sum(site[2], axis=-1)
-                   for name, site in traces.items())
+        return sum(site[1] - site[2] for name, site in traces.items())
 
     def loss_fn(self, log_ws):
-        return jnp.mean(-log_ws)
+        return -jnp.mean(log_ws, axis=0).sum()
 
 class IwaeMixin(ELBOMixin):
     def loss_fn(self, log_ws):
@@ -162,40 +161,37 @@ class ELBOTracer(ParticleTracer):
 
     def log_weights(self, traces, mutables):
         if jax.tree.leaves(mutables):
-            log_ws = sum(jnp.sum(site[1], axis=-1) - jnp.sum(site[2], axis=-1)
-                         for name, site in traces.items())
-        else:
-            log_ws = jnp.array(0.0)
-            # mapping from non-reparameterizable sample sites to cost terms influenced by each of them
-            downstream_costs: Dict[str, MultiFrameTensor] =\
-                defaultdict(lambda: MultiFrameTensor())
-            for name, site in traces.items():
-                log_ws = log_ws + jnp.sum(site[1], axis=-1)
-                for key in self._model_deps.get(name, []):
+            return super().log_weights(traces, mutables)
+        log_ws = jnp.array(0.0)
+        # mapping from non-reparameterizable sample sites to cost terms
+        # influenced by each of them
+        downstream_costs: Dict[str, MultiFrameTensor] =\
+            defaultdict(lambda: MultiFrameTensor())
+        for name, site in traces.items():
+            log_ws = log_ws + site[1]
+            for key in self._model_deps.get(name, []):
+                downstream_costs[key].add((
+                    self._model_properties[name]["cond_indep_stack"],
+                    site[1]
+                ))
+            if name in self._guide_properties:
+                log_q = site[2]
+                if not self._guide_properties[name]["reparameterized"]:
+                    log_q = jax.lax.stop_gradient(log_q)
+                log_ws = log_ws - log_q
+                for key in self._guide_deps[name]:
                     downstream_costs[key].add((
-                        self._model_properties[name]["cond_indep_stack"],
-                        site[1]
+                        self._guide_properties[name]["cond_indep_stack"],
+                        -site[2]
                     ))
-                if name in self._guide_properties:
-                    log_q = jnp.sum(site[2], axis=-1)
-                    if not self._guide_properties[name]["reparameterized"]:
-                        log_q = jax.lax.stop_gradient(log_q)
-                    log_ws = log_ws - log_q
-                    for key in self._guide_deps[name]:
-                        downstream_costs[key].add((
-                            self._guide_properties[name]["cond_indep_stack"],
-                            -site[2]
-                        ))
 
-            for node, cost in downstream_costs.items():
-                downstream_cost = cost.sum_to(
-                    self._guide_properties[node]["cond_indep_stack"]
-                )
-                log_q = traces[node][2]
-                surrogate = jnp.sum(
-                    log_q * jax.lax.stop_gradient(downstream_cost), axis=-1
-                )
-                log_ws = log_ws + surrogate - jax.lax.stop_gradient(surrogate)
+        for node, cost in downstream_costs.items():
+            downstream_cost = cost.sum_to(
+                self._guide_properties[node]["cond_indep_stack"]
+            )
+            log_q = traces[node][2]
+            surrogate = log_q * jax.lax.stop_gradient(downstream_cost)
+            log_ws = log_ws + surrogate - jax.lax.stop_gradient(surrogate)
         return log_ws
 
     def setup(self, guide_deps, model_deps, guide_trace, model_trace):
