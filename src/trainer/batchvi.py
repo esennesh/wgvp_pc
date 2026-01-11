@@ -247,7 +247,11 @@ class BatchVariationalPara(GraphicalImportancePara):
         )
         self._global_buffers = {k: v for k, v in state["mutables"].items()
                                 if k not in local_buffers}
-        return {"loss": loss, "log_w": state["log_w"]}
+
+        result = {"loss": loss}
+        result.update(**{k: v for k, v in state.items()
+                         if isinstance(v, jax.Array)})
+        return result
 
     def train_step(self, data, _, indices, *args, **kwargs):
         return self._step(data, indices, stage="train")
