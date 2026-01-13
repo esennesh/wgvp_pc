@@ -1,5 +1,6 @@
 from abc import ABC
 from collections import defaultdict
+from functools import cached_property
 import jax
 import jax.numpy as jnp
 import jax.random as random
@@ -9,7 +10,7 @@ from numpyro.infer.util import compute_log_probs, get_importance_trace
 from numpyro._typing import Message
 from numpyro.util import _validate_model, check_model_guide_match
 
-from typing import Dict
+from typing import Dict, Optional
 
 def configure_sample(msg: Message, /, **kwargs) -> Dict:
     return kwargs
@@ -201,6 +202,89 @@ class ELBOTracer(ParticleTracer):
         if reparameterized:
             return super().loss_fn(log_ws)
         return -(jnp.sum(log_ws, axis=0) / (log_ws.shape[0] - 1)).sum()
+
+    def setup(self, guide_deps, model_deps, guide_trace, model_trace):
+        self._guide_deps, self._model_deps = guide_deps, model_deps
+        for name, site in guide_trace.items():
+            if site["type"] != "sample":
+                continue
+
+            self._guide_properties[name] = {
+                "cond_indep_stack": site["cond_indep_stack"],
+                "reparameterized": site["fn"].has_rsample
+            }
+
+        for name, site in model_trace.items():
+            if site["type"] != "sample":
+                continue
+
+            self._model_properties[name] = {
+                "cond_indep_stack": site["cond_indep_stack"],
+            }
+
+class OvisTracer(ParticleTracer):
+    def __init__(self, include_aux=True, num_particles: int=1,
+                 num_auxiliary: Optional[int]=None):
+        self._guide_deps, self._model_deps = None, None
+        self._guide_properties, self._model_properties = {}, {}
+        self._include_aux = include_aux
+        if not num_auxiliary:
+            num_auxiliary = num_particles
+        self._num_aux = num_auxiliary
+        super().__init__(num_particles=num_particles + num_auxiliary)
+
+    @cached_property
+    def control_variate(self):
+        def fn(log_ws, log_aux):
+            # log_ws: K x B
+            # log_aux: S x B
+            B, K, S = log_ws.shape[-1], log_ws.shape[0], log_aux.shape[0]
+
+            log_ws = jnp.expand_dims(log_ws, (0, 1)) # -> 1 x 1 X K x B
+            log_ws = jnp.broadcast_to(log_ws, (S, K, K, B))
+            log_aux = jnp.expand_dims(log_aux, (1, 2)) # -> S x 1 x 1 x B
+            log_aux = jnp.broadcast_to(log_aux, (S, K, K, B))
+
+            mask = jnp.expand_dims(jnp.identity(K), (0, -1)) # -> 1 x K x K x 1
+            log_w_hat = (1 - mask) * log_ws + mask * log_aux # S x K x K x B
+            # S x K x K x B -> S x B x K x K
+            objectives = jnp.moveaxis(self.objective(log_w_hat, axis=-2), -1, 1)
+            # S x B x K x K -> S x B x K -> B x K
+            results = jnp.diagonal(objectives, axis1=-2, axis2=-1).mean(axis=0)
+            # B x K -> K x B
+            return jnp.moveaxis(results, 0, -1)
+        return fn
+
+    def loss_fn(self, log_ws, traces):
+        num_particles = self.num_particles - self._num_aux
+        log_weights, log_aux = log_ws[:num_particles], log_ws[num_particles:]
+
+        rewards = self.objective(log_weights, axis=0)
+        values = self.control_variate(log_weights, log_aux)
+        advantages = rewards - values
+
+        if self._include_aux:
+            log_evidence = jax.nn.logmeanexp(log_ws, axis=0)
+        else:
+            log_evidence = jax.nn.logmeanexp(log_weights, axis=0)
+
+        surrogates = jnp.zeros_like(log_weights)
+        for name, site in traces.items():
+            if name in self._guide_properties and\
+               not self._guide_properties[name]["reparameterized"]:
+                log_q = site[2][:num_particles]
+                surrogate = log_q * jax.lax.stop_gradient(advantages)
+                surrogates = surrogates + surrogate
+        surrogates = surrogates.sum(axis=0)
+        loss = -(log_evidence + surrogates - jax.lax.stop_gradient(surrogates))
+        return loss.sum()
+
+    @cached_property
+    def objective(self):
+        def fn(log_ws, axis=0):
+            return jax.nn.logmeanexp(log_ws, axis=axis, keepdims=True) -\
+                   jax.nn.softmax(log_ws, axis=axis)
+        return fn
 
     def setup(self, guide_deps, model_deps, guide_trace, model_trace):
         self._guide_deps, self._model_deps = guide_deps, model_deps
