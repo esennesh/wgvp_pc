@@ -67,8 +67,7 @@ class AutoMeanFieldProposal(AutoGuide):
                     init_value = transform.inv(getattr(site_dist, param))
                     params[param] = transform(numpyro.primitives.param(
                         "{}_{}_{}".format(name, self.prefix, param),
-                        init_value=jnp.broadcast_to(
-                            jnp.expand_dims(init_value, -(event_dim + 1)),
+                        init_value=jnp.zeros(
                             site["value"].shape[:-event_dim] + init_value.shape
                         )
                     ))
