@@ -1,0 +1,10 @@
+_target_: src.model.model.pvae_linear_guide
+_partial_: true
+encoder:
+  _target_: flax.nnx.Linear
+  in_features: 256
+  out_features: 512
+  rngs:
+    _target_: flax.nnx.Rngs
+    default: 5678
+  use_bias: false
