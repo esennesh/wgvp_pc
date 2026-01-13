@@ -18,18 +18,18 @@ class VariationalMixin(ABC):
     def log_weights(self, traces, mutables):
         raise NotImplementedError
 
-    def loss_fn(self, log_ws):
+    def loss_fn(self, log_ws, traces):
         raise NotImplementedError
 
 class ELBOMixin(VariationalMixin):
     def log_weights(self, traces, mutables):
         return sum(site[1] - site[2] for name, site in traces.items())
 
-    def loss_fn(self, log_ws):
+    def loss_fn(self, log_ws, traces):
         return -jnp.mean(log_ws, axis=0).sum()
 
 class IwaeMixin(ELBOMixin):
-    def loss_fn(self, log_ws):
+    def loss_fn(self, log_ws, traces):
         return -jax.nn.logmeanexp(log_ws)
 
 class ParticleTracer(ELBOMixin):
@@ -147,8 +147,9 @@ class ParticleTracer(ELBOMixin):
                                            v[0].shape[:2])
             traces[k] = v[:-1] + (is_observed,)
         log_ws = self.log_weights(traces, mutables)
-        return self.loss_fn(log_ws), {"log_w": log_ws.sum(axis=-1),
-                                      "mutables": mutables, "trace": traces}
+        return self.loss_fn(log_ws, traces), {"log_w": log_ws.sum(axis=-1),
+                                              "mutables": mutables,
+                                              "trace": traces}
 
     def setup(self, guide_deps, model_deps, guide_trace, model_trace):
         pass
@@ -194,7 +195,7 @@ class ELBOTracer(ParticleTracer):
             log_ws = log_ws + surrogate - jax.lax.stop_gradient(surrogate)
         return log_ws
 
-    def loss_fn(self, log_ws):
+    def loss_fn(self, log_ws, traces):
         reparameterized = all(site["reparameterized"] for site
                               in self._guide_properties.values())
         if reparameterized:
