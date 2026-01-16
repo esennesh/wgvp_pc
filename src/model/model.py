@@ -8,6 +8,7 @@ import math
 import numpyro
 from numpyro.contrib.module import nnx_module
 import numpyro.distributions as dist
+import reversible_deq as rdeq
 
 # Takes pixel intensities of the attention window to parameters (mean,
 # standard deviation) of the distribution over the latent code, z_what.
@@ -178,6 +179,56 @@ class PVaeEncoder(nnx.Module):
         hs = nnx.swish(self.conv1(xs.swapaxes(-3, -1)))
         hs = nnx.swish(self.conv2(hs))
         return self.linear(hs.reshape(hs.shape[0], -1))
+
+class DEQ(nnx.Module):
+    def __init__(self, adjoint: rdeq.AbstractAdjoint, function,
+                 solver: rdeq.AbstractSolver, *, rngs: nnx.Rngs, max_steps=2,
+                 tol=1e-6):
+        self.adjoint = adjoint
+        self.function = function
+        self.max_steps = max_steps
+        self.solver = solver
+        self.tol = tol
+
+    def __call__(self, xs, z0, rngs: nnx.Rngs=None):
+        solution = rdeq.solve(self.function, jax.lax.stop_gradient(z0),
+                              jax.lax.stop_gradient(xs),
+                              self.solver, self.adjoint, self.tol,
+                              self.max_steps)
+        return solution.z1
+
+class DeqEncoder(nnx.Module):
+    def __init__(self, adjoint, solver, x_dim, z_dim, *, rngs: nnx.Rngs,
+                 max_steps=2, tol=1e-6):
+        self.step = nnx.Sequential(nnx.Linear(x_dim + z_dim, z_dim, rngs=rngs),
+                                   nnx.leaky_relu)
+        def fn(zs, xs):
+            return self.step(jnp.concatenate((zs, xs), axis=-1))
+        self.deq = DEQ(adjoint, fn, solver, max_steps=max_steps, rngs=rngs,
+                       tol=tol)
+
+        self._x_dim = x_dim
+        self._z_dim = z_dim
+
+    def __call__(self, u, xs):
+        return self.deq(xs, u)
+
+    @property
+    def z_dim(self):
+        return self._z_dim
+
+def pvae_fpi_guide(xs, dynamics: DeqEncoder):
+    z_dim = dynamics.z_dim
+    dynamics = nnx_module("dynamics", dynamics)
+    u_0 = numpyro.param("prior$params")
+    if u_0 is not None:
+        u_0 = jnp.expand_dims(u_0["log_rate"], (0,))
+        u_0 = jnp.broadcast_to(u_0, (xs.shape[0], z_dim))
+    else:
+        u_0 = jnp.zeros((xs.shape[0], z_dim))
+    u = dynamics(u_0, xs.reshape((xs.shape[0], -1)))
+    with numpyro.plate("batch", xs.shape[0]):
+        return numpyro.sample("z", dist.Poisson(jnp.exp(u)).to_event(1))
 
 def pvae_guide(xs, encoder: PVaeEncoder):
     encoder = nnx_module("encoder", encoder)
