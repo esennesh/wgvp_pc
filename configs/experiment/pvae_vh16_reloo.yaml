@@ -6,7 +6,7 @@ defaults:
   - override /model: pvae_vh16
 
 model:
-  scale: null
+  scale: 1
 
 monad:
   optim:
