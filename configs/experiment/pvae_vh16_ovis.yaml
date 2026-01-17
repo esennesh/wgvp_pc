@@ -5,10 +5,13 @@ defaults:
   - override /guide: pvae_vh16
   - override /model: pvae_vh16
 
+model:
+  scale: null
+
 monad:
   optim:
     _target_: optax.contrib.schedule_free_adamw
-    learning_rate: 1e-4
+    learning_rate: 8e-5
   scheduler:
     _target_: optax.contrib.reduce_on_plateau
     accumulation_size: 1
@@ -20,3 +23,7 @@ monad:
   tracer:
     _target_: src.inference.graphical.OvisTracer
     num_particles: 8
+
+trainer:
+  epochs: 2000
+  save_period: 500
