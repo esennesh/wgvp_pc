@@ -168,12 +168,13 @@ def air_model(xs, decoder: AirDecoder, out_side=50):
         numpyro.sample('x', dist.Normal(xhat, scale).to_event(3), obs=xs)
 
 class PVaeEncoder(nnx.Module):
-    def __init__(self, z_dim, *, rngs: nnx.Rngs):
+    def __init__(self, z_dim, *, rngs: nnx.Rngs, x_dim=28):
         self.conv1 = nnx.Conv(1, 16, kernel_size=(3, 3), strides=2, padding=1,
                               rngs=rngs)
         self.conv2 = nnx.Conv(16, 32, kernel_size=(3, 3), strides=2, padding=1,
                               rngs=rngs)
-        self.linear = nnx.Linear(32 * 7 * 7, z_dim, rngs=rngs)
+        feature_area = (x_dim // 4) ** 2
+        self.linear = nnx.Linear(32 * feature_area, z_dim, rngs=rngs)
 
     def __call__(self, xs, rngs=None):
         hs = nnx.swish(self.conv1(xs.swapaxes(-3, -1)))
