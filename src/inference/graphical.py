@@ -24,7 +24,12 @@ class VariationalMixin(ABC):
 
 class ELBOMixin(VariationalMixin):
     def log_weights(self, traces, mutables):
-        return sum(site[1] - site[2] for name, site in traces.items())
+        log_ws = 0.
+        for name, site in traces.items():
+            beta = getattr(self, "beta", 1.)
+            term = site[1] - site[2]
+            log_ws = log_ws + jnp.where(site[3], term, beta * term)
+        return log_ws
 
     def loss_fn(self, log_ws, traces):
         return -jnp.mean(log_ws, axis=0).sum()
