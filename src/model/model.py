@@ -201,10 +201,12 @@ class DEQ(nnx.Module):
 class DeqEncoder(nnx.Module):
     def __init__(self, adjoint, solver, x_dim, z_dim, *, rngs: nnx.Rngs,
                  max_steps=2, tol=1e-6):
-        self.step = nnx.Sequential(nnx.Linear(x_dim + z_dim, z_dim, rngs=rngs),
-                                   nnx.leaky_relu)
+        self.input = nnx.Linear(x_dim, z_dim, rngs=rngs, use_bias=False)
+        self.readout = nnx.Linear(z_dim, z_dim, rngs=rngs, use_bias=True)
+        self.recurrence = nnx.Linear(z_dim, z_dim, rngs=rngs, use_bias=True)
+
         def fn(zs, xs):
-            return self.step(jnp.concatenate((zs, xs), axis=-1))
+            return nnx.tanh(self.input(xs) + self.recurrence(zs))
         self.deq = DEQ(adjoint, fn, solver, max_steps=max_steps, rngs=rngs,
                        tol=tol)
 
@@ -212,7 +214,7 @@ class DeqEncoder(nnx.Module):
         self._z_dim = z_dim
 
     def __call__(self, u, xs):
-        return self.deq(xs, u)
+        return self.readout(self.deq(xs, u))
 
     @property
     def z_dim(self):
