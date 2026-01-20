@@ -39,7 +39,8 @@ class IwaeMixin(ELBOMixin):
         return -jax.nn.logmeanexp(log_ws)
 
 class ParticleTracer(ELBOMixin):
-    def __init__(self, num_particles: int=1):
+    def __init__(self, beta: float=1., num_particles: int=1):
+        self.beta = beta
         self.num_particles = num_particles
 
     def __call__(self, rng_key, param_map, particle_params, model, guide,
