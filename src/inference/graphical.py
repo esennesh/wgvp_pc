@@ -229,7 +229,7 @@ class ELBOTracer(ParticleTracer):
             }
 
 class OvisTracer(ParticleTracer):
-    def __init__(self, include_aux=True, num_particles: int=1,
+    def __init__(self, beta=1., include_aux=True, num_particles: int=1,
                  num_auxiliary: Optional[int]=None):
         self._guide_deps, self._model_deps = None, None
         self._guide_properties, self._model_properties = {}, {}
@@ -237,7 +237,7 @@ class OvisTracer(ParticleTracer):
         if not num_auxiliary:
             num_auxiliary = num_particles
         self._num_aux = num_auxiliary
-        super().__init__(num_particles=num_particles + num_auxiliary)
+        super().__init__(beta=beta, num_particles=num_particles + num_auxiliary)
 
     @cached_property
     def control_variate(self):
