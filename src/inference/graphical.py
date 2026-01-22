@@ -24,7 +24,12 @@ class VariationalMixin(ABC):
 
 class ELBOMixin(VariationalMixin):
     def log_weights(self, traces, mutables):
-        return sum(site[1] - site[2] for name, site in traces.items())
+        log_ws = 0.
+        for name, site in traces.items():
+            beta = getattr(self, "beta", 1.)
+            term = site[1] - site[2]
+            log_ws = log_ws + jnp.where(site[3], term, beta * term)
+        return log_ws
 
     def loss_fn(self, log_ws, traces):
         return -jnp.mean(log_ws, axis=0).sum()
@@ -34,7 +39,8 @@ class IwaeMixin(ELBOMixin):
         return -jax.nn.logmeanexp(log_ws)
 
 class ParticleTracer(ELBOMixin):
-    def __init__(self, num_particles: int=1):
+    def __init__(self, beta: float=1., num_particles: int=1):
+        self.beta = beta
         self.num_particles = num_particles
 
     def __call__(self, rng_key, param_map, particle_params, model, guide,
@@ -223,7 +229,7 @@ class ELBOTracer(ParticleTracer):
             }
 
 class OvisTracer(ParticleTracer):
-    def __init__(self, include_aux=True, num_particles: int=1,
+    def __init__(self, beta=1., include_aux=True, num_particles: int=1,
                  num_auxiliary: Optional[int]=None):
         self._guide_deps, self._model_deps = None, None
         self._guide_properties, self._model_properties = {}, {}
@@ -231,7 +237,7 @@ class OvisTracer(ParticleTracer):
         if not num_auxiliary:
             num_auxiliary = num_particles
         self._num_aux = num_auxiliary
-        super().__init__(num_particles=num_particles + num_auxiliary)
+        super().__init__(beta=beta, num_particles=num_particles + num_auxiliary)
 
     @cached_property
     def control_variate(self):
