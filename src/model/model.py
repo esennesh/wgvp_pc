@@ -241,7 +241,16 @@ def pvae_guide(xs, encoder: PVaeEncoder):
 
 def pvae_linear_guide(xs, encoder: nnx.Linear):
     encoder = nnx_module("encoder", encoder)
-    u = encoder(xs.reshape((xs.shape[0], -1)))
+    delta_u = encoder(xs.reshape((xs.shape[0], -1)))
+
+    u_0 = numpyro.param("prior$params")
+    if u_0 is not None:
+        u_0 = jnp.expand_dims(u_0["log_rate"], (0,))
+        u_0 = jnp.broadcast_to(u_0, (xs.shape[0], delta_u.shape[1]))
+    else:
+        u_0 = jnp.zeros((xs.shape[0], delta_u.shape[1]))
+
+    u = u_0 + delta_u
     with numpyro.plate("batch", xs.shape[0]):
         return numpyro.sample("z", dist.Poisson(jnp.exp(u)).to_event(1))
 
