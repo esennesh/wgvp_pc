@@ -128,8 +128,9 @@ class Trainer:
                                       description="Training (Epoch %d)" % epoch,
                                       total=len(data_loader), transient=True):
             metrics = monad.train_step(*batch)
-            for k, v in metrics.items():
-                metrics[k + "_batch_mean"] = v / len(batch[0])
+            metrics.update(**{
+                k + "_batch_mean": v / len(batch[0]) for k, v in metrics.items()
+            })
             loss = metrics['loss'].item()
 
             self.writer.set_step(epoch * len(data_loader) + batch_idx)
