@@ -236,7 +236,7 @@ def pvae_fpi_guide(xs, dynamics: DeqEncoder):
         u_0 = jnp.broadcast_to(u_0, (xs.shape[0], z_dim))
     else:
         u_0 = jnp.zeros((xs.shape[0], z_dim))
-    u = dynamics(u_0, xs.reshape((xs.shape[0], -1)))
+    u = u_0 + dynamics(u_0, xs.reshape((xs.shape[0], -1)))
     with numpyro.plate("batch", xs.shape[0]):
         return numpyro.sample("z", dist.Poisson(jnp.exp(u)).to_event(1))
 
