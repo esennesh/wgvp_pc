@@ -128,6 +128,8 @@ class Trainer:
                                       description="Training (Epoch %d)" % epoch,
                                       total=len(data_loader), transient=True):
             metrics = monad.train_step(*batch)
+            for k, v in metrics.items():
+                metrics[k + "_batch_mean"] = v / len(batch[0])
             loss = metrics['loss'].item()
 
             self.writer.set_step(epoch * len(data_loader) + batch_idx)
@@ -150,6 +152,7 @@ class Trainer:
             batch_metrics = step(*batch)
             for k, v in batch_metrics.items():
                 metrics[k].append(v)
+                metrics[k + "_batch_mean"].append(v / len(batch[0]))
         return {k: np.mean(vs) for k, vs in metrics.items()}
 
     def train(self, monad: ParaMonad, datamodule: DataModule,
