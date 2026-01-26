@@ -22,7 +22,8 @@ monad:
     rtol: 1e-4
   tracer:
     _target_: src.inference.graphical.OvisTracer
-    num_particles: 8
+    num_particles: 16
+    num_auxiliary: 10
 
 trainer:
   epochs: 2000
