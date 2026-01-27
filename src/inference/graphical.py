@@ -206,7 +206,7 @@ class ELBOTracer(ParticleTracer):
         reparameterized = all(site["reparameterized"] for site
                               in self._guide_properties.values())
         if reparameterized:
-            return super().loss_fn(log_ws)
+            return super().loss_fn(log_ws, traces)
         return -(jnp.sum(log_ws, axis=0) / (log_ws.shape[0] - 1)).sum()
 
     def setup(self, guide_deps, model_deps, guide_trace, model_trace):
