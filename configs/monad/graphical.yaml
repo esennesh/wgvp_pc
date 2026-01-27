@@ -6,4 +6,4 @@ _target_: src.trainer.graphical.GraphicalImportancePara
 rng: 123
 tracer:
   _target_: src.inference.graphical.ELBOTracer
-  num_particles: 4
+  num_particles: 8
