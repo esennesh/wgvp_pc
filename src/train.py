@@ -1,7 +1,9 @@
 import argparse
 import collections
 import hydra
+import jax
 import logging
+import numpyro
 from numpyro import optim
 from omegaconf import DictConfig
 import os
@@ -37,13 +39,17 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
 
     log.info(f"Instantiating generative model <{cfg.model._target_}>")
     model: Callable = hydra.utils.instantiate(cfg.model)
-    log.info(f"Instantiating guide inference program <{cfg.guide._target_}>")
-    guide: Callable = hydra.utils.instantiate(cfg.guide)
+    if "guide" in cfg:
+        log.info(f"Instantiating guide inference program <{cfg.guide._target_}>")
+        guide: Optional[Callable] = hydra.utils.instantiate(cfg.guide)
+    else:
+        guide: Optional[Callable] = None
 
     log.info(f"Instantiating trainable module <{cfg.monad._target_}>")
-    monad: ParaMonad = hydra.utils.instantiate(cfg.monad,
-                                               data_shape=datamodule.shape,
-                                               guide=guide, model=model)
+    monad_kwargs = {"data_shape": datamodule.shape, "model": model}
+    if guide:
+        monad_kwargs["guide"] = guide
+    monad: ParaMonad = hydra.utils.instantiate(cfg.monad, **monad_kwargs)
 
     log.info(f"Instantiating trainer <{cfg.trainer._target_}>")
     trainer: BaseTrainer = hydra.utils.instantiate(cfg.trainer, logger=log)
@@ -58,7 +64,14 @@ def train(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
 
     if cfg.get("train"):
         log.info("Starting training!")
-        trainer.train(monad, datamodule, ckpt_path=cfg.get("ckpt_path"))
+        if cfg.get("debug", False):
+            numpyro.enable_validation()
+            jax.config.update("jax_check_tracer_leaks", True)
+            jax.config.update("jax_debug_nans", True)
+            with jax.disable_jit():
+                trainer.train(monad, datamodule, ckpt_path=cfg.get("ckpt_path"))
+        else:
+            trainer.train(monad, datamodule, ckpt_path=cfg.get("ckpt_path"))
 
     train_metrics = trainer.train_metrics.result()
 

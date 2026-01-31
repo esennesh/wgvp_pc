@@ -1,0 +1,23 @@
+# @package _global_
+
+defaults:
+  - override /guide: auto_mean_field
+  - override /model: pvae
+  - override /monad: batchvi
+
+monad:
+  local_optim:
+    _target_: optax.contrib.schedule_free_adamw
+    learning_rate: 1e-4
+  optim:
+    _target_: optax.contrib.schedule_free_adamw
+    learning_rate: 1e-4
+  rng: 123
+  tracer:
+    _target_: src.inference.graphical.OvisTracer
+    num_auxiliary: 8
+    num_particles: 32
+
+trainer:
+  epochs: 1000
+  save_period: 500

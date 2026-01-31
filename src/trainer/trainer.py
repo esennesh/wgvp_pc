@@ -86,7 +86,7 @@ class Trainer:
         try:
             monad.load(checkpoint)
         except Exception as ex:
-            self.logger.exception(ex.msg)
+            self.logger.exception(str(ex))
             raise ex
 
         self.logger.info("Checkpoint loaded. Resume training from epoch {}".format(self.epoch))
@@ -124,10 +124,13 @@ class Trainer:
         else:
             log_step = self.log_step
         self.train_metrics.reset()
-        for batch_idx, batch in track(enumerate(data_loader),
+        for batch_idx, batch in track(enumerate(data_loader), auto_refresh=False,
                                       description="Training (Epoch %d)" % epoch,
                                       total=len(data_loader), transient=True):
             metrics = monad.train_step(*batch)
+            metrics.update(**{
+                k + "_batch_mean": v / len(batch[0]) for k, v in metrics.items()
+            })
             loss = metrics['loss'].item()
 
             self.writer.set_step(epoch * len(data_loader) + batch_idx)
@@ -138,15 +141,19 @@ class Trainer:
 
     def test(self, monad: ParaMonad, datamodule: DataModule,
              ckpt_path: Optional[str]=None, valid: bool=True):
+        monad.setup_step(datamodule)
         if ckpt_path is not None:
             self._resume_checkpoint(monad, ckpt_path)
 
         dataloader = datamodule.valid_dataloader() if valid else\
                      datamodule.test_dataloader()
         metrics = defaultdict(lambda: [])
+        step = monad.valid_step if valid else monad.test_step
         for batch_idx, batch in enumerate(dataloader):
-            for k, v in monad.valid_step(*batch).items():
+            batch_metrics = step(*batch)
+            for k, v in batch_metrics.items():
                 metrics[k].append(v)
+                metrics[k + "_batch_mean"].append(v / len(batch[0]))
         return {k: np.mean(vs) for k, vs in metrics.items()}
 
     def train(self, monad: ParaMonad, datamodule: DataModule,
@@ -154,12 +161,14 @@ class Trainer:
         """
         Full training logic
         """
+        monad.setup_step(datamodule)
         if ckpt_path is not None:
             self._resume_checkpoint(monad, ckpt_path)
 
         not_improved_count = 0
         train_dataloader = datamodule.train_dataloader()
         valid_dataloader = datamodule.valid_dataloader()
+
         for epoch in range(self.epoch, self.epochs + 1):
             train_result = self._train_epoch(monad, train_dataloader, epoch)
             valid_result = {}
@@ -208,7 +217,7 @@ class Trainer:
         """
 
         self.valid_metrics.reset()
-        for batch_idx, batch in track(enumerate(data_loader),
+        for batch_idx, batch in track(enumerate(data_loader), auto_refresh=False,
                                       description="Validating (Epoch %d)" % epoch,
                                       total=len(data_loader), transient=True):
             metrics = monad.valid_step(*batch)
@@ -218,10 +227,11 @@ class Trainer:
             for met in self.metrics:
                 self.valid_metrics.update(met, metrics[met])
 
+        monad.validate(self.valid_metrics.avg("loss"))
+
         # add histogram of parameters to the tensorboard
-        parameters = monad.parameters
-        for name in parameters:
-            for p, par in enumerate(flatten(parameters[name])):
-                self.writer.add_histogram(name + "$" + str(p), np.asarray(par),
-                                          bins='auto')
+        for name, par in flatten(monad.parameters):
+
+            self.writer.add_histogram(name.replace("$", "_"), np.asarray(par),
+                                      bins="auto")
         return self.valid_metrics.result()

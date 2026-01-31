@@ -1,0 +1,11 @@
+# @package _global_
+
+defaults:
+  - override /data: mnist
+  - override /guide: auto_mean_field
+  - override /model: vae
+  - override /monad: batchvi
+
+trainer:
+  epochs: 1000
+  save_period: 200

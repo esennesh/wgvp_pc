@@ -1,0 +1,17 @@
+# @package _global_
+
+defaults:
+  - override /data: mnist
+  - override /guide: langevin
+  - override /model: vae
+  - override /monad: batchvi
+
+guide:
+  lr: 1e-3
+
+monad:
+  lr: 1e-3
+
+trainer:
+  epochs: 500
+  save_period: 250

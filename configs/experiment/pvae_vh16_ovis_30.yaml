@@ -1,0 +1,31 @@
+# @package _global_
+
+defaults:
+  - override /data: vh16
+  - override /guide: pvae_vh16
+  - override /model: pvae_vh16
+
+model:
+  scale: 1
+
+monad:
+  optim:
+    _target_: optax.contrib.schedule_free_adamw
+    learning_rate: 8e-5
+  scheduler:
+    _target_: optax.contrib.reduce_on_plateau
+    accumulation_size: 1
+    cooldown: 20
+    factor: 0.5
+    min_scale: 0.025
+    patience: 5
+    rtol: 1e-4
+  tracer:
+    _target_: src.inference.graphical.OvisTracer
+    beta: 3.0
+    num_particles: 16
+    num_auxiliary: 10
+
+trainer:
+  epochs: 2000
+  save_period: 500
