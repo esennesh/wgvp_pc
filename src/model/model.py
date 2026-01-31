@@ -200,13 +200,20 @@ class DEQ(nnx.Module):
 
 class DeqEncoder(nnx.Module):
     def __init__(self, adjoint, solver, x_dim, z_dim, *, rngs: nnx.Rngs,
-                 max_steps=2, tol=1e-6):
-        self.input = nnx.Linear(x_dim, z_dim, rngs=rngs, use_bias=False)
-        self.readout = nnx.Linear(z_dim, z_dim, rngs=rngs, use_bias=True)
-        self.recurrence = nnx.Linear(z_dim, z_dim, rngs=rngs, use_bias=True)
+                 max_steps=2, recurrent=True, tol=1e-6):
+        if recurrent:
+            self.input = nnx.Linear(x_dim, z_dim, rngs=rngs, use_bias=False)
+            self.readout = nnx.Linear(z_dim, z_dim, rngs=rngs, use_bias=True)
+            self.recurrence = nnx.Linear(z_dim, z_dim, rngs=rngs, use_bias=True)
 
-        def fn(zs, xs):
-            return nnx.tanh(self.input(xs) + self.recurrence(zs))
+            def fn(zs, xs):
+                return nnx.tanh(self.input(xs) + self.recurrence(zs))
+        else:
+            self.input = nnx.Linear(x_dim + z_dim, z_dim, rngs=rngs,
+                                    use_bias=False)
+            self.readout = nnx.identity
+            def fn(zs, xs):
+                return self.input(jnp.concatenate((zs, xs), axis=-1))
         self.deq = DEQ(adjoint, fn, solver, max_steps=max_steps, rngs=rngs,
                        tol=tol)
 
@@ -229,7 +236,7 @@ def pvae_fpi_guide(xs, dynamics: DeqEncoder):
         u_0 = jnp.broadcast_to(u_0, (xs.shape[0], z_dim))
     else:
         u_0 = jnp.zeros((xs.shape[0], z_dim))
-    u = dynamics(u_0, xs.reshape((xs.shape[0], -1)))
+    u = u_0 + dynamics(u_0, xs.reshape((xs.shape[0], -1)))
     with numpyro.plate("batch", xs.shape[0]):
         return numpyro.sample("z", dist.Poisson(jnp.exp(u)).to_event(1))
 
