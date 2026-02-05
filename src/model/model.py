@@ -197,24 +197,31 @@ class DEQ(nnx.Module):
                               self.max_steps)
         return solution.z1
 
+class RnnCell(nnx.Module):
+    def __init__(self, x_dim, z_dim, *, rngs: nnx.Rngs):
+        self.simple = nnx.SimpleCell(x_dim, z_dim, rngs=rngs)
+
+    def __call__(self, zs, xs):
+        return self.simple(zs, xs)[0]
+
+class LinearInjector(nnx.Module):
+    def __init__(self, x_dim, z_dim, *, rngs: nnx.Rngs):
+        self.input = nnx.Linear(x_dim + z_dim, z_dim, rngs=rngs, use_bias=False)
+
+    def __call__(self, zs, xs):
+        return self.input(jnp.concatenate((zs, xs), axis=-1))
+
 class DeqEncoder(nnx.Module):
     def __init__(self, adjoint, solver, x_dim, z_dim, *, rngs: nnx.Rngs,
                  max_steps=2, recurrent=True, tol=1e-6):
         if recurrent:
-            self.input = nnx.Linear(x_dim, z_dim, rngs=rngs, use_bias=False)
+            self.cell = RnnCell(x_dim, z_dim, rngs=rngs)
             self.readout = nnx.Linear(z_dim, z_dim, rngs=rngs, use_bias=True)
-            self.recurrence = nnx.Linear(z_dim, z_dim, rngs=rngs, use_bias=True)
-
-            def fn(zs, xs):
-                return nnx.tanh(self.input(xs) + self.recurrence(zs))
         else:
-            self.input = nnx.Linear(x_dim + z_dim, z_dim, rngs=rngs,
-                                    use_bias=False)
+            self.cell = LinearInjector(x_dim, z_dim, rngs=rngs)
             self.readout = nnx.identity
-            def fn(zs, xs):
-                return self.input(jnp.concatenate((zs, xs), axis=-1))
-        self.deq = DEQ(adjoint, fn, solver, max_steps=max_steps, rngs=rngs,
-                       tol=tol)
+        self.deq = DEQ(adjoint, self.cell, solver, max_steps=max_steps,
+                       rngs=rngs, tol=tol)
 
         self._x_dim = x_dim
         self._z_dim = z_dim
