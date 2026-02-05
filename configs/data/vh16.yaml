@@ -1,6 +1,6 @@
 _target_: src.data.vh16.VanHaterenDataModule
 data_dir: ${paths.data_dir}
-batch_size: 128 # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
+batch_size: 1000 # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
 drop_last: true
 indexed: true
 validation_split: 0.1
