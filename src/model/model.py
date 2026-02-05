@@ -192,8 +192,7 @@ class DEQ(nnx.Module):
         self.tol = tol
 
     def __call__(self, xs, z0, rngs: nnx.Rngs=None):
-        solution = rdeq.solve(self.function, jax.lax.stop_gradient(z0),
-                              jax.lax.stop_gradient(xs),
+        solution = rdeq.solve(self.function, jax.lax.stop_gradient(z0), xs,
                               self.solver, self.adjoint, self.tol,
                               self.max_steps)
         return solution.z1
