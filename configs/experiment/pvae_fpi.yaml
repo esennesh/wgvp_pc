@@ -20,4 +20,4 @@ monad:
     num_particles: 8
 
 trainer:
-  epochs: 500
+  epochs: 4000
