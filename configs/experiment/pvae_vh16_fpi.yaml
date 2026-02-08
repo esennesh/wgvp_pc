@@ -7,7 +7,6 @@ defaults:
 
 guide:
   dynamics:
-    recurrent: false
     x_dim: 256
     z_dim: 512
 
@@ -30,5 +29,5 @@ monad:
     num_particles: 8
 
 trainer:
-  epochs: 2000
-  save_period: 500
+  epochs: 4000
+  save_period: 1000
