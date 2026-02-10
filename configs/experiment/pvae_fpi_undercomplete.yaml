@@ -1,0 +1,23 @@
+# @package _global_
+
+defaults:
+  - override /guide: pvae_fpi_undercomplete
+  - override /model: pvae_undercomplete
+
+monad:
+  optim:
+    _target_: optax.contrib.schedule_free_adamw
+    learning_rate: 2e-4
+  scheduler:
+    _target_: optax.contrib.reduce_on_plateau
+    accumulation_size: 1
+    cooldown: 20
+    factor: 0.5
+    min_scale: 0.025
+    patience: 5
+    rtol: 1e-4
+  tracer:
+    num_particles: 8
+
+trainer:
+  epochs: 4000

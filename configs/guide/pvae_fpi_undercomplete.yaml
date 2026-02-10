@@ -1,0 +1,16 @@
+_target_: src.model.model.pvae_fpi_guide
+_partial_: true
+dynamics:
+  _target_: src.model.model.DeqEncoder
+  adjoint:
+    _target_: reversible_deq.ReversibleAdjoint
+  max_steps: 50
+  solver:
+    _target_: reversible_deq.Reversible
+    beta: 0.8
+  tol: 1e-6
+  x_dim: 784
+  z_dim: 512
+  rngs:
+    _target_: flax.nnx.Rngs
+    default: 5678
