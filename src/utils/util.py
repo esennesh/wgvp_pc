@@ -10,6 +10,7 @@ import numpy as np
 import numpyro
 import pandas as pd
 from pathlib import Path
+import re
 from itertools import repeat
 from collections import OrderedDict
 from numpyro.infer.autoguide import AutoGuide
@@ -22,6 +23,13 @@ import rich.tree
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 log = logging.LoggerAdapter(logger=logging.getLogger(__name__))
+
+def sort_key(key):
+    match = re.match(r"(\d+)(\+?)", key)
+    if match:
+        num, plus = match.groups()
+        return int(num), plus == '+'
+    return float('inf'), False
 
 def is_autoguide(g):
     import abc
