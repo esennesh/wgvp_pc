@@ -119,7 +119,7 @@ class PVaeTrainer(Trainer):
                                                                    *u_0.shape))
                 du = dynamics(u_0, xs.reshape((xs.shape[0], -1)), max_steps=t+1)
                 batch_elbo = sum(v[1] - v[2] for v in traces.values()).mean(0)
-                batch_kl = (traces["z"][1] - traces["z"][2]).mean(axis=0)
+                batch_kl = (traces["z"][2] - traces["z"][1]).mean(axis=0)
                 batch_r2 = r2(xs, xs_hat)
                 batch_sse = ((xs - xs_hat) ** 2).sum(axis=(-3, -2, -1))
                 norms_batch = jnp.linalg.norm(du[:, active], axis=-1)
