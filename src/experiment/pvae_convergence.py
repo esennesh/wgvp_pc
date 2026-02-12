@@ -2,6 +2,9 @@ import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
+import typing
+
+import src.utils as utils
 
 def create_figure(nrows=1, ncols=1, figsize=None, sharex="none", sharey="none",
                   layout=None, wspace=None, hspace=None, width_ratios=None,
@@ -23,6 +26,63 @@ def create_figure(nrows=1, ncols=1, figsize=None, sharex="none", sharey="none",
     if reshape:
         axes = np.array(axes).reshape((nrows, ncols))
     return fig, axes
+
+def _iter_ax(axes):
+    if not isinstance(axes, typing.Iterable):
+        return [axes]
+    elif isinstance(axes, np.ndarray):
+        return axes.flat
+
+def make_grid(x, grid_size, scaling=None, pad=1, pad_val=np.nan, normalize=True,
+              **kwargs):
+    if len(x.shape) == 3:
+        x = x[:, np.newaxis]
+    assert len(x.shape) == 4
+    x = x.transpose(0, 2, 3, 1)
+    b, h, w, c = x.shape
+
+    if scaling is None:
+        scaling = [1.0] * b
+    assert len(scaling) == b
+
+    if isinstance(grid_size, int):
+        grid_size = (grid_size, grid_size)
+    n_rows, n_cols = grid_size
+
+    grid = np.ones(((h + pad) * n_rows - pad, (w + pad) * n_cols - pad, c))
+    grid *= pad_val
+
+    for idx in range(min(n_rows * n_cols, b)):
+        i = idx // n_cols
+        j = idx % n_cols
+        a = (h + pad) * i
+        b = (w + pad) * j
+
+        y = x[idx]
+        if normalize:
+            y = normalize_img(y, **kwargs)
+        y *= scaling[idx]  # apply manual scaling
+        grid[a:a + h, b:b + w] = y
+
+    return grid
+
+def normalize_img(x: np.ndarray, method='min-max', val_range=(0, 1)):
+    if method == 'min-max':
+        xmin = np.min(x)
+        xmax = np.max(x)
+
+        numen = x - xmin
+        denum = xmax - xmin
+        x_nrm = numen / denum
+
+        a, b = min(val_range), max(val_range)
+        x_nrm = x_nrm * (b - a) + a
+    elif method == 'abs-max':
+        x_nrm = x / np.max(np.abs(x))
+    else:
+        raise ValueError(method)
+
+    return x_nrm
 
 def plot_convergence(metrics: dict, nrows=2, items=None, interval=None,
                      display=True, **kwargs):
@@ -54,6 +114,77 @@ def plot_convergence(metrics: dict, nrows=2, items=None, interval=None,
     else:
         plt.close()
     return fig, axes
+
+def show_decoder(datamodule, model, order=None, method="abs-max",
+                 add_title=False, display=True, **kwargs):
+    phi = np.array(model.keywords["decoder"].kernel.value.squeeze())
+    if order is not None:
+        phi = phi[order, :]
+    phi = phi.reshape(phi.shape[0], *datamodule.shape[1:])
+
+    pad = 1
+    if kwargs.get("pad", None) is None:
+        kwargs["pad"] = pad
+    if kwargs.get("dpi", None) is None:
+        kwargs["dpi"] = 200
+
+    return plot_grid(phi, display=display, method=method,
+                     title=None if not add_title else "$\\Phi$", **kwargs)
+
+def plot_grid(imgs, display=True, method="min-max", nrows=None, title=None,
+              **kwargs):
+    defaults = dict(dpi=160, figsize=(8, 4), title_fontsize=8, title_y=1.01)
+    kwargs = {k: kwargs.get(k, defaults.get(k, None)) for k
+              in defaults.keys() | kwargs.keys()}
+    if nrows is None:
+        a = np.log2(len(imgs))
+        a = int(np.ceil(a))
+        if a % 2 == 1:
+            a += 1
+        if a <= 6:
+            exponent = a // 3 - 1
+        elif len(imgs) == 128:
+            exponent = 2
+        else:
+            exponent = a // 2 - 1
+        nrows = int(2 ** exponent)
+        nrows = max(1, nrows)
+
+    kws_grid = utils.filter_kwargs(make_grid, kwargs)
+    ncols = int(np.ceil(len(imgs) / nrows))
+    grid = make_grid(imgs, grid_size=(nrows, ncols), method=method,
+                     normalize=False if method == 'none' else True, **kws_grid)
+    fig, ax = create_figure(figsize=kwargs["figsize"], dpi=kwargs["dpi"],
+                            layout="tight")
+    cmap = kwargs.get("cmap", "Greys_r")
+    if method == "abs-max":
+        vmin, vmax = -1, 1
+    elif method == "min-max":
+        vmin, vmax = 0, 1
+    elif method == "none":
+        vmin, vmax = None, None
+    kws_show = {"cmap": cmap, "vmax": kwargs.get("vmax", vmax),
+                "vmin": kwargs.get("vmin", vmin)}
+    ax.imshow(grid, **kws_show)
+    ax.set_title(fontsize=kwargs.get("title_fontsize", None), label=title,
+                 y=kwargs.get("title_y", None))
+    remove_ticks(ax)
+    if display:
+        plt.show()
+    else:
+        plt.close()
+
+    return fig, ax
+
+def remove_ticks(axes, full=True):
+    for ax in _iter_ax(axes):
+        ax.set_xticks([])
+        ax.set_yticks([])
+        if full:
+            try:
+                map(lambda z: z.set_visible(False), ax.spines.values())
+            except AttributeError:
+                continue
 
 def set_style(context: str = 'notebook', style: str = 'ticks',
               palette: str = None, font: str = 'sans-serif'):
