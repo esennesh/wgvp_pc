@@ -56,12 +56,9 @@ def sparse_score(z, cutoff: float = None):
 
 class PVaeTrainer(Trainer):
     def analysis(self, datamodule: DataModule, monad: ParaMonad, active=None,
-                 average_samples=True, ckpt_path: Optional[str]=None,
-                 compute_sparsity=False, return_recons=False, stage="valid",
-                 t_total=None, verbose=True):
-        monad.setup_step(datamodule)
-        if ckpt_path is not None:
-            self._resume_checkpoint(monad, ckpt_path)
+                 average_samples=True, compute_sparsity=False,
+                 return_recons=False, stage="valid", t_total=None,
+                 verbose=True):
         dataloader = getattr(datamodule, stage + "_dataloader")()
 
         extra_items = ['samples', 'du', 'r2', 'mse']
