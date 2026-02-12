@@ -23,6 +23,7 @@ dependencies = [
     "reversible-deq",
     "rich>=14.1.0",
     "rootutils>=1.0.7",
+    "seaborn>=0.13.2",
     "tensorboard>=2.20.0",
     "tensorboardx>=2.6.4",
     "torch>=2.8.0",
