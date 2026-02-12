@@ -196,3 +196,23 @@ class PVaeTrainer(Trainer):
             metrics["population"] = population_acc / sparsity_num_samples
 
         return metrics
+
+    def proposal_us(self, datamodule: DataModule, monad: ParaMonad,
+                    max_steps=100, stage="test", verbose=True):
+        dataloader = getattr(datamodule, stage + "_dataloader")()
+        dynamics = monad.guide.keywords["dynamics"]
+        u_0 = monad.model.keywords["prior"].log_rate.value
+
+        us = jnp.zeros_like(u_0)
+        n = 0
+        for b, (xs, *_) in tqdm.tqdm(enumerate(dataloader), disable=not verbose,
+                                     ncols=70):
+            if u_0.shape[0] != xs.shape[0]:
+                u_0 = jnp.broadcast_to(u_0[jnp.newaxis, ...], (xs.shape[0],
+                                                               *u_0.shape))
+            du = dynamics(u_0, xs.reshape((xs.shape[0], -1)),
+                          max_steps=max_steps)
+            us = us + (u_0 + du).sum(axis=0)
+            n += len(xs)
+
+        return us / n
