@@ -1,7 +1,9 @@
 import argparse
 import collections
 import hydra
+import jax
 import logging
+import numpyro
 from numpyro import optim
 from omegaconf import DictConfig
 import os
@@ -64,8 +66,19 @@ def test(cfg: DictConfig) -> Tuple[Dict[str, Any], Dict[str, Any]]:
     if cfg.ckpt_path == "" or not os.path.exists(cfg.ckpt_path):
         log.warning("Best ckpt not found! Using current weights for testing...")
         cfg.ckpt_path = None
-    test_metrics = trainer.test(monad, datamodule, ckpt_path=cfg.ckpt_path,
-                                valid=False)
+    if cfg.get("debug", False):
+        numpyro.enable_validation()
+        jax.config.update("jax_check_tracer_leaks", True)
+        jax.config.update("jax_debug_nans", True)
+        with jax.disable_jit():
+            test_metrics = trainer.test(monad, datamodule,
+                                        ckpt_path=cfg.get("ckpt_path"),
+                                        valid=False)
+    else:
+        test_metrics = trainer.test(monad, datamodule,
+                                    ckpt_path=cfg.get("ckpt_path"),
+                                    valid=False)
+
     log.info(f"Tested from ckpt path: {cfg.ckpt_path}")
 
     # merge train and test metrics
