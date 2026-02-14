@@ -325,11 +325,7 @@ class VarGradTracer(VarGradMixin, ParticleTracer):
 
 class OnlineWeightMixin(VariationalMixin):
     def log_weights(self, traces, mutables):
-        log_likelihood = sum(jnp.where(site[3], site[1],
-                                       jnp.zeros_like(site[3]))
-                             for name, site in traces.items())
-        log_q = sum(site[2] for site in traces.values())
-        return log_likelihood - log_q
+        return sum(site[1] * site[3] for site in traces.values())
 
 class OnlineVarGradTracer(OnlineWeightMixin, VarGradTracer):
     pass
