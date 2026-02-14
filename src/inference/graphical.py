@@ -330,6 +330,14 @@ class OnlineWeightMixin(VariationalMixin):
 class OnlineVarGradTracer(OnlineWeightMixin, VarGradTracer):
     pass
 
+class OnlineRelooTracer(OnlineWeightMixin, ParticleTracer):
+    def loss_fn(self, log_ws, traces):
+        log_q = sum(site[2] * ~site[3] for site in traces.values())
+        advantages = log_ws - log_ws.mean(axis=0, keepdims=True)
+        surrogate = jax.lax.stop_gradient(advantages) * log_q
+        surrogate = surrogate - jax.lax.stop_gradient(surrogate)
+        return -(log_ws + surrogate).mean(axis=0).sum()
+
 class AdaptiveParticleTracer(IwaeMixin, ParticleTracer):
     def __call__(self, rng_key, param_map, particle_params, model, guide,
                  *args, **kwargs):
