@@ -5,8 +5,8 @@ guide:
   _partial_: true
 optim:
   _target_: optax.yogi
-  learning_rate: 1e-4
+  learning_rate: 1.
 tracer:
-  _target_: src.inference.graphical.OnlineVarGradTracer
+  _target_: src.inference.graphical.OnlineRelooTracer
   num_particles: 10
-num_iterations: 100
+num_iterations: 5
