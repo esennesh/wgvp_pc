@@ -58,6 +58,7 @@ class AutoMeanFieldProposal(AutoGuide):
                 for frame in site["cond_indep_stack"]:
                     stack.enter_context(plates[frame.name])
 
+                batch_shape = site["value"].shape[:-event_dim]
                 site_dist = site["fn"]
                 while hasattr(site_dist, "base_dist"):
                     site_dist = site_dist.base_dist
@@ -65,15 +66,18 @@ class AutoMeanFieldProposal(AutoGuide):
                 for param, constraint in site_dist.arg_constraints.items():
                     transform = biject_to(constraint)
                     init_value = transform.inv(getattr(site_dist, param))
+                    init_value = jnp.expand_dims(init_value,
+                                                 tuple(range(len(batch_shape))))
+                    init_value = jnp.broadcast_to(
+                        init_value, batch_shape + init_value.shape[-event_dim:]
+                    )
                     params[param] = transform(numpyro.primitives.param(
                         "{}_{}_{}".format(name, self.prefix, param),
-                        init_value=jnp.zeros(
-                            site["value"].shape[:-event_dim] + init_value.shape
-                        )
+                        init_value=init_value
                     ))
-                q = site_dist.__class__(**params)
+                q = site_dist.__class__(**params).to_event(event_dim)
 
-                result[name] = numpyro.sample(name, q.to_event(event_dim))
+                result[name] = numpyro.sample(name, q)
 
         return result
 

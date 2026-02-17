@@ -57,8 +57,9 @@ class IterativeGuide(AutoGuide):
         for i, rng in enumerate(iteration_rngs):
             params = self.optimizer.get_params(optim_state)
             with block(expose=self.model_params):
-                grads, _ = self.elbo_grad(buffers, params, rng, *args, **kwargs)
-            optim_state = self.optimizer.update(grads, optim_state, value=0.)
+                (ll, aux), grads = self.elbo_grad(buffers, params, rng, *args,
+                                                  **kwargs)
+            optim_state = self.optimizer.update(grads, optim_state, value=ll)
 
         return jax.lax.stop_gradient(self.optimizer.get_params(optim_state))
 
@@ -77,7 +78,7 @@ class IterativeGuide(AutoGuide):
             params.update(**jax.lax.stop_gradient(buffers))
             return self.tracer.loss(rng, params, {}, self.model, self.guide,
                                     *args, **kwargs)
-        return jax.grad(fn, argnums=1, has_aux=True)
+        return jax.value_and_grad(fn, argnums=1, has_aux=True)
 
     @property
     def model_params(self):

@@ -37,7 +37,7 @@ class ELBOMixin(VariationalMixin):
 
 class IwaeMixin(ELBOMixin):
     def loss_fn(self, log_ws, traces):
-        return -jax.nn.logmeanexp(log_ws)
+        return -jax.nn.logmeanexp(log_ws, axis=0).sum()
 
 class ParticleTracer(ELBOMixin):
     def __init__(self, beta: float=1., num_particles: int=1):
@@ -325,14 +325,18 @@ class VarGradTracer(VarGradMixin, ParticleTracer):
 
 class OnlineWeightMixin(VariationalMixin):
     def log_weights(self, traces, mutables):
-        log_likelihood = sum(jnp.where(site[3], site[1],
-                                       jnp.zeros_like(site[3]))
-                             for name, site in traces.items())
-        log_q = sum(site[2] for site in traces.values())
-        return log_likelihood - log_q
+        return sum(site[1] * site[3] for site in traces.values())
 
 class OnlineVarGradTracer(OnlineWeightMixin, VarGradTracer):
     pass
+
+class OnlineRelooTracer(OnlineWeightMixin, ParticleTracer):
+    def loss_fn(self, log_ws, traces):
+        log_q = sum(site[2] * ~site[3] for site in traces.values())
+        advantages = log_ws - log_ws.mean(axis=0, keepdims=True)
+        surrogate = jax.lax.stop_gradient(advantages) * log_q
+        surrogate = surrogate - jax.lax.stop_gradient(surrogate)
+        return -(log_ws + surrogate).mean(axis=0).sum()
 
 class AdaptiveParticleTracer(IwaeMixin, ParticleTracer):
     def __call__(self, rng_key, param_map, particle_params, model, guide,
