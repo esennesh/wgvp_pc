@@ -1,13 +1,13 @@
 # @package _global_
 
 defaults:
-  - override /guide: iterative
-  - override /model: pvae
+  - override /guide: ipvae
+  - override /model: nnpvae
 
 monad:
   optim:
     _target_: optax.contrib.schedule_free_adamw
-    learning_rate: 1e-4
+    learning_rate: 2e-3
   scheduler:
     _target_: optax.contrib.reduce_on_plateau
     accumulation_size: 1
@@ -21,4 +21,5 @@ monad:
     num_particles: 8
 
 trainer:
-  epochs: 500
+  epochs: 100
+  save_period: 100

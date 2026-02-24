@@ -1,0 +1,3 @@
+_target_: src.inference.iterative.IPVaeGuide
+x_dim: 784
+z_dim: 1568
