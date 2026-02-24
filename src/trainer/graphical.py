@@ -167,6 +167,8 @@ class GraphicalImportancePara(ParaMonad):
         buffers = state.mutables
         params = {}
         for param, value in state.params.items():
+            if value is None:
+                continue
             site = state.guide_trace.get(param, None)
             if not site:
                 site = state.model_trace[param]
