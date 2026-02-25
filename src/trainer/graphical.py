@@ -145,9 +145,10 @@ class GraphicalImportancePara(ParaMonad):
         self._rng, model_seed, guide_seed = random.split(self._rng, 3)
         init_guide = replay(seed(self.guide, guide_seed), guide_trace)
         init_model = replay(seed(self.model, model_seed), model_trace)
-        model_deps, guide_deps = get_nonreparam_deps(init_model, init_guide,
-                                                     args, kwargs, state.params,
-                                                     latents=latents)
+        model_deps, guide_deps = get_nonreparam_deps(
+            init_model, init_guide, args, kwargs,
+            self._constrain_fn(state.params), latents=latents
+        )
         self.tracer.setup(guide_deps, model_deps, guide_trace, model_trace)
 
         from src.utils import get_model_relations
@@ -205,9 +206,9 @@ class GraphicalImportancePara(ParaMonad):
                                         self.model, self.guide, data)
 
             # Replicating the Numpyro eval_and_update() method.
-            (loss, state), grads = numpyro.optim._value_and_grad(
-                loss_fn, x=self.optimizer.get_params(optim_state)
-            )
+            params = self._constrain_fn(self.optimizer.get_params(optim_state))
+            (loss, state), grads = numpyro.optim._value_and_grad(loss_fn,
+                                                                 x=params)
             # Intervene by scaling the grads according to LR scheduler
             if self.scheduler and self.schedule_state:
                 grads = optax.tree.scale(self.schedule_state.scale, grads)
