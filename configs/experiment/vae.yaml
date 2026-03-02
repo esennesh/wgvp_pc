@@ -4,6 +4,7 @@ defaults:
   - override /data: mnist
   - override /guide: vae
   - override /model: vae
+  - override /monad/optim: adam
 
 trainer:
   epochs: 100
