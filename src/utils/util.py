@@ -52,9 +52,13 @@ def is_autoguide(g):
 
     if isinstance(g, abc.ABCMeta) and issubclass(g, AutoGuide):
         return True
-    if isinstance(g, partial):
-        if isinstance(g.func, abc.ABCMeta) and issubclass(g.func, AutoGuide):
+    if isinstance(g, type):
+        import inspect
+        members = {k for k, _ in inspect.getmembers(g)}
+        if "__call__" in members and "_setup_prototype" in members:
             return True
+    if isinstance(g, partial):
+        return is_autoguide(g.func)
     return False
 
 def flatten_optim_state(state):
