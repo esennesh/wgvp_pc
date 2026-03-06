@@ -252,7 +252,7 @@ def pvae_guide(xs, encoder: PVaeEncoder):
     encoder = nnx_module("encoder", encoder)
     u = encoder(xs)
     with numpyro.plate("batch", xs.shape[0]):
-        return numpyro.sample("z", ef.Poisson(u).to_event(1))
+        return numpyro.sample("z", dist.Poisson(jnp.exp(u)).to_event(1))
 
 def pvae_linear_guide(xs, encoder: nnx.Linear):
     encoder = nnx_module("encoder", encoder)
