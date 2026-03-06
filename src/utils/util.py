@@ -5,11 +5,13 @@ from jax.example_libraries.optimizers import (OptimizerState,
                                               unpack_optimizer_state)
 import json
 from importlib.util import find_spec
+import inspect
 import logging
 import numpy as np
 import numpyro
 import pandas as pd
 from pathlib import Path
+import re
 from itertools import repeat
 from collections import OrderedDict
 from numpyro.infer.autoguide import AutoGuide
@@ -22,6 +24,27 @@ import rich.tree
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 log = logging.LoggerAdapter(logger=logging.getLogger(__name__))
+
+def filter_kwargs(fn, kw=None):
+    if not kw:
+        return {}
+    try:
+        if isinstance(fn, type):  # class
+            params = get_all_init_params(fn)
+        elif callable(fn):  # function
+            params = inspect.signature(fn).parameters
+        else:
+            raise ValueError(type(fn).__name__)
+        return {k: v for k, v in kw.items() if k in params}
+    except ValueError:
+        return kw
+
+def sort_key(key):
+    match = re.match(r"(\d+)(\+?)", key)
+    if match:
+        num, plus = match.groups()
+        return int(num), plus == '+'
+    return float('inf'), False
 
 def is_autoguide(g):
     import abc

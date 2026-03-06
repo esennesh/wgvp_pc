@@ -48,7 +48,7 @@ class GraphicalImportancePara(ParaMonad):
     def buffer_state(self):
         return self._buffer_state
 
-    def __call__(self, *args, stage="train", **kwargs):
+    def __call__(self, *args, stage="train", return_trace=False, **kwargs):
         self._rng, rng = random.split(self.rng)
         particle_params = jax.lax.stop_gradient(self.buffer_state)
         particle_params.update({
@@ -60,6 +60,8 @@ class GraphicalImportancePara(ParaMonad):
         trace, mutables = self.tracer(rng, params, particle_params,
                                       reconstruct(self.model),
                                       self.guide, *args, **kwargs)
+        if return_trace:
+            return trace
         return {k: v[0] for k, v in trace.items()}
 
     @cached_property

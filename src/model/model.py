@@ -193,10 +193,12 @@ class DEQ(nnx.Module):
         self.solver = solver
         self.tol = tol
 
-    def __call__(self, xs, z0, rngs: nnx.Rngs=None):
+    def __call__(self, xs, z0, max_steps=None, rngs: nnx.Rngs=None):
+        if max_steps is None:
+            max_steps = self.max_steps
         solution = rdeq.solve(self.function, jax.lax.stop_gradient(z0), xs,
                               self.solver, self.adjoint, self.tol,
-                              self.max_steps)
+                              max_steps)
         return solution.z1
 
 class RnnCell(nnx.Module):
@@ -228,14 +230,14 @@ class DeqEncoder(nnx.Module):
         self._x_dim = x_dim
         self._z_dim = z_dim
 
-    def __call__(self, u, xs):
-        return self.readout(self.deq(xs, u))
+    def __call__(self, u, xs, max_steps=None):
+        return self.readout(self.deq(xs, u, max_steps=max_steps))
 
     @property
     def z_dim(self):
         return self._z_dim
 
-def pvae_fpi_guide(xs, dynamics: DeqEncoder):
+def pvae_fpi_guide(xs, dynamics: DeqEncoder, max_steps=None, **kwargs):
     z_dim = dynamics.z_dim
     dynamics = nnx_module("dynamics", dynamics)
     u_0 = numpyro.param("prior$params")
@@ -244,7 +246,7 @@ def pvae_fpi_guide(xs, dynamics: DeqEncoder):
         u_0 = jnp.broadcast_to(u_0, (xs.shape[0], z_dim))
     else:
         u_0 = jnp.zeros((xs.shape[0], z_dim))
-    u = u_0 + dynamics(u_0, xs.reshape((xs.shape[0], -1)))
+    u = u_0 + dynamics(u_0, xs.reshape((xs.shape[0], -1)), max_steps=max_steps)
     with numpyro.plate("batch", xs.shape[0]):
         return numpyro.sample("z", dist.Poisson(jnp.exp(u)).to_event(1))
 
@@ -277,7 +279,7 @@ class PVaePrior(nnx.Module):
     def __call__(self, rngs=None):
         return jnp.exp(self.log_rate)
 
-def pvae_model(xs, decoder: nnx.Linear, prior: PVaePrior, scale=None):
+def pvae_model(xs, decoder: nnx.Linear, prior: PVaePrior, scale=None, **kwargs):
     decoder = nnx_module("decoder", decoder)
     prior = nnx_module("prior", prior)
     if scale is None:

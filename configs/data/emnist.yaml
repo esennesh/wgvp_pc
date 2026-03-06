@@ -1,0 +1,9 @@
+_target_: src.data.emnist.EMnistDataModule
+data_dir: ${paths.data_dir}
+batch_size: 128 # Needs to be divisible by the number of devices (e.g., if in a distributed setup)
+binarize: false
+drop_last: true
+indexed: true
+validation_split: 0.1
+num_workers: 0
+pin_memory: False
