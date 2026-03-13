@@ -304,7 +304,7 @@ class PVaePrior(nnx.Module):
     def __call__(self, rngs=None):
         return jnp.exp(self.log_rate)
 
-def pvae_model(xs, decoder: nnx.Linear, prior: PVaePrior, scale=None, **kwargs):
+def pvae_model(xs, decoder: NMFDecoder, prior: PVaePrior, scale=None, **kwargs):
     decoder = nnx_module("decoder", decoder)
     prior = nnx_module("prior", prior)
     if scale is None:
