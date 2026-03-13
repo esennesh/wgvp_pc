@@ -9,6 +9,7 @@ import numpyro
 from numpyro.contrib.module import nnx_module
 import numpyro.distributions as dist
 import reversible_deq as rdeq
+from typing import Union
 
 from src.utils import ef
 
@@ -304,7 +305,8 @@ class PVaePrior(nnx.Module):
     def __call__(self, rngs=None):
         return jnp.exp(self.log_rate)
 
-def pvae_model(xs, decoder: NMFDecoder, prior: PVaePrior, scale=None, **kwargs):
+def pvae_model(xs, decoder: Union[nnx.Linear, NMFDecoder], prior: PVaePrior,
+               scale=None, **kwargs):
     decoder = nnx_module("decoder", decoder)
     prior = nnx_module("prior", prior)
     if scale is None:
