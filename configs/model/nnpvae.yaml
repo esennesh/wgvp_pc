@@ -1,0 +1,16 @@
+_target_: src.model.model.pvae_model
+_partial_: true
+decoder:
+  _target_: src.model.model.NMFDecoder
+  in_features: 1568
+  out_features: 784
+  rngs:
+    _target_: flax.nnx.Rngs
+    default: 1234
+  use_bias: false
+prior:
+  _target_: src.model.model.PVaePrior
+  z_dim: 1568
+  rngs:
+    _target_: flax.nnx.Rngs
+    default: 5678
