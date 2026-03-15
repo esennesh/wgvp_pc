@@ -199,20 +199,17 @@ class PVaeTrainer(Trainer):
 
     def proposal_us(self, datamodule: DataModule, monad: ParaMonad,
                     max_steps=100, stage="test", verbose=True):
-        dataloader = getattr(datamodule, stage + "_dataloader")()
-        dynamics = monad.guide.keywords["dynamics"]
-        u_0 = monad.model.keywords["prior"].log_rate.value
+        from numpyro.handlers import seed, substitute, trace
 
-        us = jnp.zeros_like(u_0)
+        dataloader = getattr(datamodule, stage + "_dataloader")()
+        guide = seed(substitute(monad.guide, monad.parameters), monad.rng)
+        us = jnp.zeros_like(monad.model.keywords["prior"].log_rate)
         n = 0
         for b, (xs, *_) in tqdm.tqdm(enumerate(dataloader), disable=not verbose,
                                      ncols=70):
-            if u_0.shape[0] != xs.shape[0]:
-                u_0 = jnp.broadcast_to(u_0[jnp.newaxis, ...], (xs.shape[0],
-                                                               *u_0.shape))
-            du = dynamics(u_0, xs.reshape((xs.shape[0], -1)),
-                          max_steps=max_steps)
-            us = us + (u_0 + du).sum(axis=0)
+            guide_trace = trace(guide).get_trace(xs)
+            u = jnp.log(guide_trace["z"]["fn"].base_dist.rate)
+            us = us + u.sum(axis=0)
             n += len(xs)
 
         return us / n
