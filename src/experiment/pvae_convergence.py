@@ -115,9 +115,9 @@ def plot_convergence(metrics: dict, nrows=2, items=None, interval=None,
         plt.close()
     return fig, axes
 
-def show_decoder(datamodule, model, order=None, method="abs-max",
+def show_decoder(datamodule, parameters, order=None, method="abs-max",
                  add_title=False, display=True, **kwargs):
-    phi = np.array(model.keywords["decoder"].kernel.value.squeeze())
+    phi = np.array(parameters["decoder$params"]["kernel"].squeeze())
     if order is not None:
         phi = phi[order, :]
     phi = phi.reshape(phi.shape[0], *datamodule.shape[1:])
