@@ -1,3 +1,4 @@
+from flax import nnx
 import jax.numpy as jnp
 import numpy as np
 from numpyro.contrib.module import nnx_module
@@ -65,9 +66,11 @@ class PVaeTrainer(Trainer):
         if return_recons:
             extra_items.append("recon")
 
-        # dynamics = nnx_module("dynamics", monad.guide.keywords["dynamics"])
         dynamics = monad.guide.keywords["dynamics"]
-        u_0 = monad.model.keywords["prior"].log_rate.value
+        nnx.update(dynamics, monad.parameters["dynamics$params"])
+        prior = monad.model.keywords["prior"]
+        nnx.update(prior, monad.parameters["prior$params"])
+        u_0 = prior.log_rate.value
         x_dim = monad.model.keywords["decoder"].kernel.shape[1]
         z_dim = monad.model.keywords["decoder"].kernel.shape[0]
         if active is None:
