@@ -89,13 +89,22 @@ def initialize_traces(model, guide, rng, params, *args, **kwargs):
     from numpyro.distributions.transforms import biject_to
     from numpyro.handlers import seed, substitute, trace
     rng, model_seed, guide_seed = random.split(rng, 3)
+    if hasattr(guide, "adapt") and isinstance(guide.adapt, Callable):
+        rng, adapt_rng = random.split(rng)
+        adapt = seed(guide.adapt, adapt_rng)
+        with substitute(data=params):
+            adapt_trace = trace(adapt).get_trace(*args, **kwargs)
+    else:
+        adapt_trace = OrderedDict()
+
     init_model = seed(model, model_seed)
     init_guide = seed(guide, guide_seed)
     model_trace, guide_trace = get_importance_trace(init_model, init_guide,
                                                     args, kwargs, params)
 
     params, inv_transforms, mutables = {}, {}, {}
-    for site in itertools.chain(guide_trace.values(), model_trace.values()):
+    for site in itertools.chain(adapt_trace.values(), guide_trace.values(),
+                                model_trace.values()):
         if site["type"] == "param":
             constraint = site["kwargs"].pop("constraint", constraints.real)
             with helpful_support_errors(site):
