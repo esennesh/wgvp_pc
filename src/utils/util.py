@@ -105,10 +105,10 @@ def initialize_traces(model, guide, rng, params, *args, **kwargs):
     init_guide = seed(guide, guide_seed)
     model_trace, guide_trace = get_importance_trace(init_model, init_guide,
                                                     args, kwargs, params)
+    guide_trace |= adapt_trace
 
     params, inv_transforms, mutables = {}, {}, {}
-    for site in itertools.chain(adapt_trace.values(), guide_trace.values(),
-                                model_trace.values()):
+    for site in itertools.chain(guide_trace.values(), model_trace.values()):
         if site["type"] == "param":
             constraint = site["kwargs"].pop("constraint", constraints.real)
             with helpful_support_errors(site):
