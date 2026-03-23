@@ -27,10 +27,11 @@ class IterativeGuide(AutoGuide):
                          create_plates=create_plates)
 
     def adapt(self, *args, **kwargs):
+        if self.prototype_trace is None:
+            self._setup_prototype(*args, **kwargs)
+
         from numpyro.handlers import block, trace
 
-        self.guide = self.guide(self.model) if is_autoguide(self.guide)\
-                     else self.guide
         def hide_guide_params(msg):
             return self.guide.prefix in msg.get("name", "") or\
                    msg["type"] != "param"
@@ -64,8 +65,8 @@ class IterativeGuide(AutoGuide):
         return jax.lax.stop_gradient(self.optimizer.get_params(optim_state))
 
     def __call__(self, *args, adaptation=None, **kwargs):
-        self.guide = self.guide(self.model) if is_autoguide(self.guide)\
-                     else self.guide
+        if self.prototype_trace is None:
+            self._setup_prototype(*args, **kwargs)
 
         guide = numpyro.handlers.substitute(self.guide, data=adaptation)\
                 if adaptation else self.guide
@@ -82,11 +83,15 @@ class IterativeGuide(AutoGuide):
 
     @property
     def model_params(self):
-        if hasattr(self.guide, "prototype_trace"):
-            return {name for name, site in self.guide.prototype_trace.items()
-                    if site["type"] == "param"}
-        return set()
+        return {name for name, site in self.prototype_trace.items()
+                if site["type"] == "param"}
 
     def sample_posterior(self, rng_key, params, *args, sample_shape=(),
                          **kwargs):
         raise NotImplementedError()
+
+    def _setup_prototype(self, *args, **kwargs):
+        self.guide = self.guide(self.model) if is_autoguide(self.guide)\
+                     else self.guide
+        self.guide._setup_prototype(*args, **kwargs)
+        self.prototype_trace = self.guide.prototype_trace
