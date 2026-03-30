@@ -25,6 +25,9 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 log = logging.LoggerAdapter(logger=logging.getLogger(__name__))
 
+def soft_clamp(xs, lower=0., upper=1.):
+    return lower + jax.nn.relu(xs - lower) - jax.nn.relu(xs - upper)
+
 def filter_kwargs(fn, kw=None):
     if not kw:
         return {}
