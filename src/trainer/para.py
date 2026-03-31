@@ -37,7 +37,7 @@ class ParaMonad:
     def train_step(self, *args, **kwargs) -> Dict[str, float]:
         raise NotImplementedError
 
-    def validate(self, loss: float):
+    def validate(self, epoch: int, loss: float):
         pass
 
     @abstractmethod

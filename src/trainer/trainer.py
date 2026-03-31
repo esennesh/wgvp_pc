@@ -227,11 +227,12 @@ class Trainer:
             for met in self.metrics:
                 self.valid_metrics.update(met, metrics[met])
 
-        monad.validate(self.valid_metrics.avg("loss"))
+        lr_scalar = monad.validate(epoch, self.valid_metrics.avg("loss"))
+        self.writer.add_histogram("learning_rate_scale", np.asarray(lr_scalar),
+                                  bins="auto")
 
         # add histogram of parameters to the tensorboard
         for name, par in flatten(monad.parameters):
-
             self.writer.add_histogram(name.replace("$", "_"), np.asarray(par),
                                       bins="auto")
         return self.valid_metrics.result()
