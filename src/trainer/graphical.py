@@ -10,7 +10,7 @@ from numpyro.infer import Predictive
 from omegaconf.dictconfig import DictConfig
 import optax
 
-from typing import Any, Dict
+from typing import Any, Callable, Dict
 
 from .para import ParaMonad
 from src.data import DataModule
@@ -186,7 +186,9 @@ class GraphicalImportancePara(ParaMonad):
             self._buffer_state = buffers
             self.optim_state = self.optimizer.init(params)
 
-        if self.scheduler and not self.schedule_state:
+        if self.scheduler and isinstance(self.scheduler,
+                                         optax.GradientTransformation) and\
+           not self.schedule_state:
             self.schedule_state = self.scheduler.init(params)
 
         return state.guide_trace, state.model_trace
@@ -231,11 +233,16 @@ class GraphicalImportancePara(ParaMonad):
         self._buffer_state.update(state["mutables"])
         return {"loss": loss, "log_w": state["log_w"]}
 
-    def validate(self, loss: float):
-        if self.scheduler:
+    def validate(self, epoch: int, loss: float):
+        if self.scheduler and isinstance(self.scheduler,
+                                         optax.GradientTransformation):
             _, self.schedule_state = self.scheduler.update(
                 updates=self.parameters, state=self.schedule_state, value=loss
             )
+            return self.schedule_state.scale
+        elif self.scheduler and isinstance(self.scheduler, Callable):
+            return self.scheduler(epoch)
+        return 1.
 
     def valid_step(self, data, *args, **kwargs):
         loss, self._rng, state = self._evaluate(data, self.parameters, self.rng)
