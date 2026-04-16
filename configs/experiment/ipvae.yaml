@@ -11,14 +11,14 @@ monad:
   scheduler:
     _target_: optax.contrib.reduce_on_plateau
     accumulation_size: 1
-    cooldown: 20
+    cooldown: 2
     factor: 0.5
     min_scale: 0.025
     patience: 5
     rtol: 1e-4
   tracer:
     _target_: src.inference.graphical.AdaptiveElboTracer
-    num_particles: 8
+    num_particles: 10
 
 trainer:
   epochs: 100
