@@ -1,4 +1,5 @@
 from flax import nnx
+import jax
 import jax.numpy as jnp
 import numpy as np
 from numpyro.contrib.module import nnx_module
@@ -66,8 +67,11 @@ class PVaeTrainer(Trainer):
         if return_recons:
             extra_items.append("recon")
 
-        dynamics = monad.guide.keywords["dynamics"]
-        nnx.update(dynamics, monad.parameters["dynamics$params"])
+        if hasattr(monad.guide, "keywords"):
+            dynamics = monad.guide.keywords["dynamics"]
+            nnx.update(dynamics, monad.parameters["dynamics$params"])
+        else:
+            dynamics = monad.guide.dynamics
         prior = monad.model.keywords["prior"]
         nnx.update(prior, monad.parameters["prior$params"])
         u_0 = prior.log_rate.value
@@ -79,14 +83,14 @@ class PVaeTrainer(Trainer):
         shape = (t_total,)
         if not average_samples:
             shape = (len(dataloader.dataset),) + shape
-        du_norm = jnp.empty(shape)
-        elbo = jnp.empty(shape)
-        kl = jnp.empty(shape)
-        sse = jnp.empty(shape)
-        total_r2 = jnp.empty(shape)
+        du_norm = np.empty(shape)
+        elbo = np.empty(shape)
+        kl = np.empty(shape)
+        sse = np.empty(shape)
+        total_r2 = np.empty(shape)
 
         samples_shape = (len(dataloader.dataset), t_total)
-        state_final = jnp.empty(samples_shape)
+        state_final = np.empty(samples_shape)
 
         zeroes_count, zeroes_total = np.zeros(t_total), np.zeros(t_total)
         if compute_sparsity:
@@ -108,7 +112,7 @@ class PVaeTrainer(Trainer):
             if compute_sparsity:
                 z_sparsities = []
 
-            for t in range(0, t_total):
+            for t in tqdm.tqdm(range(0, t_total), ncols=70, leave=False):
                 traces = monad(xs, stage=stage, return_trace=True,
                                max_steps=t+1)
                 xs_hat = traces["x"][0].mean(axis=0)
@@ -117,16 +121,24 @@ class PVaeTrainer(Trainer):
                 if u_0.shape[0] != xs.shape[0]:
                     u_0 = jnp.broadcast_to(u_0[jnp.newaxis, ...], (xs.shape[0],
                                                                    *u_0.shape))
-                du = dynamics(u_0, xs.reshape((xs.shape[0], -1)), max_steps=t+1)
-                batch_elbo = sum(v[1] - v[2] for v in traces.values()).mean(0)
-                batch_kl = (traces["z"][2] - traces["z"][1]).mean(axis=0)
-                batch_r2 = r2(xs, xs_hat)
-                batch_sse = ((xs - xs_hat) ** 2).sum(axis=(-3, -2, -1))
-                norms_batch = jnp.linalg.norm(du[:, active], axis=-1)
+                du = dynamics(u_0, jax.lax.collapse(xs, 1), max_steps=t+1)
+                batch_elbo = np.array(
+                    sum(v[1] - v[2] for v in traces.values()).mean(0)
+                )
+                batch_kl = np.array(
+                    (traces["z"][2] - traces["z"][1]).mean(axis=0)
+                )
+                batch_r2 = np.array(r2(xs, xs_hat))
+                batch_sse = np.array(
+                    ((xs - xs_hat) ** 2).sum(axis=(-3, -2, -1))
+                )
+                norms_batch = np.linalg.norm(du[:, active], axis=-1)
 
                 z_active = traces["z"][0][:, :, active]
                 zeroes_count[t] += (z_active == 0).sum()
                 zeroes_total[t] += z_active.size
+
+                del traces
 
                 if compute_sparsity:
                     z_sparsities.append(z_active)
@@ -147,11 +159,11 @@ class PVaeTrainer(Trainer):
                 if return_recons:
                     batch_recons.append(xs_hat)
 
-            elbos = jnp.stack(elbos, axis=0 if average_samples else 1)
-            kls = jnp.stack(kls, axis=0 if average_samples else 1)
-            r2s = jnp.stack(r2s, axis=0 if average_samples else 1)
-            norms = jnp.stack(norms, axis=0 if average_samples else 1)
-            sses = jnp.stack(sses, axis=0 if average_samples else 1)
+            elbos = np.stack(elbos, axis=0 if average_samples else 1)
+            kls = np.stack(kls, axis=0 if average_samples else 1)
+            r2s = np.stack(r2s, axis=0 if average_samples else 1)
+            norms = np.stack(norms, axis=0 if average_samples else 1)
+            sses = np.stack(sses, axis=0 if average_samples else 1)
 
             if average_samples:
                 du_norm = du_norm + norms
@@ -170,9 +182,9 @@ class PVaeTrainer(Trainer):
                 recons[batch_interval] = np.stack(batch_recons, axis=1)
 
             if compute_sparsity:
-                z_sparsities = jnp.stack(z_sparsities, axis=1)
+                z_sparsities = np.stack(z_sparsities, axis=1)
                 lt, pop, _ = sparse_score(z_sparsities, cutoff=None)
-                lifetime_acc += jnp.mean(lt, axis=1) * len(xs)
+                lifetime_acc += np.mean(lt, axis=1) * len(xs)
                 population_acc += pop.sum(axis=0)
                 sparsity_num_samples += len(xs)
 
@@ -184,9 +196,9 @@ class PVaeTrainer(Trainer):
             du_norm /= len(dataloader.dataset)
 
         portion_zeroes = zeroes_count / zeroes_total
-        sparse_coding_performance = jnp.sqrt((1 - total_r2) ** 2 +\
-                                             (1 - portion_zeroes) ** 2)
-        sparse_coding_performance = sparse_coding_performance / jnp.sqrt(2)
+        sparse_coding_performance = np.sqrt((1 - total_r2) ** 2 +\
+                                            (1 - portion_zeroes) ** 2)
+        sparse_coding_performance = sparse_coding_performance / np.sqrt(2)
         metrics = {"du_norm": du_norm, "elbo": elbo, "kl": kl,
                    "nelbo": kl + sse, "%-zeros": portion_zeroes, "r2": total_r2,
                    "sse": sse,
@@ -211,7 +223,10 @@ class PVaeTrainer(Trainer):
         for b, (xs, *_) in tqdm.tqdm(enumerate(dataloader), disable=not verbose,
                                      ncols=70):
             guide_trace = trace(guide).get_trace(xs)
-            u = jnp.log(guide_trace["z"]["fn"].base_dist.rate)
+            if hasattr(guide_trace["z"]["fn"].base_dist, "rate"):
+                u = jnp.log(guide_trace["z"]["fn"].base_dist.rate)
+            else:
+                u = guide_trace["z"]["fn"].base_dist.log_mean
             us = us + u.sum(axis=0)
             n += len(xs)
 
