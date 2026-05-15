@@ -273,8 +273,9 @@ def pvae_linear_guide(xs, encoder: nnx.Linear):
         return numpyro.sample("z", dist.Poisson(jnp.exp(u)).to_event(1))
 
 class NonnegativeParam(nnx.Param):
-    def on_get_value(self, value):
-        return value ** 2.
+    def get_value(self, *, index=nnx.Variable.MISSING):
+        value = super().get_value(index=index)
+        return value ** 2
 
 class NMFDecoder(nnx.Module):
     def __init__(self, in_features, out_features, *, rngs: nnx.Rngs,
