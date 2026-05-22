@@ -2,7 +2,7 @@
 
 defaults:
   - override /guide: auto_mean_field
-  - override /model: pvae
+  - override /model: nnpvae
   - override /monad: batchvi
 
 monad:
