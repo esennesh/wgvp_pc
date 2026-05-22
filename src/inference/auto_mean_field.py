@@ -20,28 +20,6 @@ class AutoMeanFieldProposal(AutoGuide):
         super().__init__(model, init_loc_fn=init_to_sample, prefix=prefix,
                          create_plates=create_plates)
 
-    def _setup_prototype(self, *args, **kwargs):
-        from numpyro.handlers import block, trace
-        with block(expose_types=["param"]):
-            self.prototype_trace = trace(self.model).get_trace(*args, **kwargs)
-
-        for name, site in self.prototype_trace.items():
-            if site["type"] == "sample":
-                if site["is_observed"]:
-                    continue
-
-                self._event_dims[name] = site["fn"].event_dim
-                # If subsampling, repeat init_value to full size.
-                for frame in site["cond_indep_stack"]:
-                    if frame.name in self._prototype_frames:
-                        assert frame == self._prototype_frames[frame.name], (
-                            f"The plate {frame.name} has inconsistent dim or size. Please check your model again."
-                        )
-                    else:
-                        self._prototype_frames[frame.name] = frame
-            elif site["type"] == "plate":
-                self._prototype_frame_full_sizes[name] = site["args"][0]
-
     def __call__(self, *args, **kwargs):
         if self.prototype_trace is None:
             # run model to inspect the model structure
@@ -82,6 +60,10 @@ class AutoMeanFieldProposal(AutoGuide):
         return result
 
     @property
+    def event_dims(self):
+        return self._event_dims
+
+    @property
     def num_particles(self):
         return self._num_particles
 
@@ -97,3 +79,25 @@ class AutoMeanFieldProposal(AutoGuide):
                 samples[site] = numpyro.sample(site, q.expand_by(sample_shape))
 
         return self._constrain(samples)
+
+    def _setup_prototype(self, *args, **kwargs):
+        from numpyro.handlers import block, trace
+        with block(expose_types=["param"]):
+            self.prototype_trace = trace(self.model).get_trace(*args, **kwargs)
+
+        for name, site in self.prototype_trace.items():
+            if site["type"] == "sample":
+                if site["is_observed"]:
+                    continue
+
+                self._event_dims[name] = site["fn"].event_dim
+                # If subsampling, repeat init_value to full size.
+                for frame in site["cond_indep_stack"]:
+                    if frame.name in self._prototype_frames:
+                        assert frame == self._prototype_frames[frame.name], (
+                            f"The plate {frame.name} has inconsistent dim or size. Please check your model again."
+                        )
+                    else:
+                        self._prototype_frames[frame.name] = frame
+            elif site["type"] == "plate":
+                self._prototype_frame_full_sizes[name] = site["args"][0]

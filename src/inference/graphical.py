@@ -338,7 +338,7 @@ class OnlineRelooTracer(OnlineWeightMixin, ParticleTracer):
         surrogate = surrogate - jax.lax.stop_gradient(surrogate)
         return -((log_ws + surrogate).sum(axis=0) / (log_ws.shape[0] - 1)).sum()
 
-class AdaptiveParticleTracer(IwaeMixin, ParticleTracer):
+class AdaptiveParticleTracer(ParticleTracer):
     def __call__(self, rng_key, param_map, particle_params, model, guide,
                  *args, **kwargs):
         param_map = param_map.copy()

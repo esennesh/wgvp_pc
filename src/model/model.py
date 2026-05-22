@@ -1,4 +1,5 @@
 from flax import nnx
+import flax.typing as flaxtyping
 import functools
 import jax
 from jax import jit, lax
@@ -273,7 +274,7 @@ def pvae_linear_guide(xs, encoder: nnx.Linear):
         return numpyro.sample("z", dist.Poisson(jnp.exp(u)).to_event(1))
 
 class NonnegativeParam(nnx.Param):
-    def get_value(self, *, index=nnx.Variable.MISSING):
+    def get_value(self, *, index=flaxtyping.MISSING):
         value = super().get_value(index=index)
         return value ** 2
 

@@ -1,5 +1,7 @@
+import efax
 from functools import cached_property
 import jax
+import jax.numpy as jnp
 import numpyro
 from numpyro.infer.autoguide import AutoGuide
 from numpyro.infer.initialization import init_to_sample
@@ -7,7 +9,7 @@ import optax
 from omegaconf.dictconfig import DictConfig
 
 from src.inference.graphical import ParticleTracer
-from src.utils import initialize_traces, is_autoguide
+from src.utils import ef, initialize_traces, is_autoguide, soft_clamp
 
 class IterativeGuide(AutoGuide):
     def __init__(self, model, guide, optim, tracer, num_iterations: int=1, *,
@@ -95,3 +97,75 @@ class IterativeGuide(AutoGuide):
                      else self.guide
         self.guide._setup_prototype(*args, **kwargs)
         self.prototype_trace = self.guide.prototype_trace
+
+class IPVaeGuide:
+    def __init__(self, x_dim, z_dim):
+        self.x_dim = x_dim
+        self.z_dim = z_dim
+
+    def adapt(self, xs, max_steps=None):
+        u_0 = jax.lax.stop_gradient(self.u_0((xs.shape[0],)))
+        du = self.dynamics(u_0, jax.lax.collapse(xs, 1), max_steps=max_steps)
+        return {"u": u_0 + du}
+
+    def __call__(self, xs, adaptation=None, max_steps=None):
+        if adaptation is None:
+            u = self.adapt(xs, max_steps=max_steps)["u"]
+        else:
+            u = adaptation["u"]
+
+        with numpyro.plate("batch", xs.shape[0]):
+            return numpyro.sample("z", ef.Poisson(u).to_event(1))
+
+    def dynamics(self, u_0, xs, max_steps=None):
+        import optimistix
+
+        solution = optimistix.minimise(self.loss(),
+                                       optimistix.NonlinearCG(atol=1e-9,
+                                                              rtol=1e-9),
+                                       jnp.zeros_like(u_0), args=(u_0, xs),
+                                       max_steps=max_steps, throw=not max_steps)
+        return solution.value
+
+    def loss(self):
+        decoder_params = numpyro.param("decoder$params")
+        if decoder_params is None:
+            kernel = jnp.eye(self.z_dim, self.x_dim)
+        else:
+            kernel = jax.lax.stop_gradient(decoder_params["kernel"] ** 2)
+
+        log_scale = numpyro.param("log_scale")
+        if log_scale is None:
+            log_scale = jnp.zeros(())
+        else:
+            log_scale = jax.lax.stop_gradient(log_scale)
+
+        def fn(du, carry, kernel=kernel, log_scale=log_scale):
+            u_0, xs = carry
+            u = u_0 + du
+            rate = jnp.exp(u)
+            recons = jnp.einsum("ij,bi->bj", kernel, rate)
+
+            log_normalizer = -1/2 * jnp.log(2 * jnp.pi)
+            variance_penalty = -log_scale
+            residuals = -((xs - recons) ** 2).sum(axis=-1) - jnp.einsum(
+                "i,bi->b", jnp.diag(kernel @ kernel.T).T, rate
+            )
+            residuals = residuals / (2 * jnp.exp(log_scale) ** 2)
+            ce = -(log_normalizer + variance_penalty + residuals)
+            kl = (jnp.exp(u_0) + rate * (du - 1)).sum(axis=-1)
+            return ce.sum() + kl.sum()
+        return fn
+
+    def sample_posterior(self, rng_key, params, *args, sample_shape=(),
+                         **kwargs):
+        raise NotImplementedError()
+
+    def u_0(self, batch_shape):
+        u_0 = numpyro.param("prior$params")
+        if u_0 is not None:
+            u_0 = jnp.expand_dims(u_0["log_rate"], (0,))
+            u_0 = jnp.broadcast_to(u_0, batch_shape + (self.z_dim,))
+        else:
+            u_0 = jnp.zeros(batch_shape + (self.z_dim,))
+        return u_0
