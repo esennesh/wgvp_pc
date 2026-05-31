@@ -1,6 +1,7 @@
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
+import pathlib
 import seaborn as sns
 import typing
 
@@ -132,7 +133,7 @@ def show_decoder(datamodule, parameters, order=None, method="abs-max",
                      title=None if not add_title else "$\\Phi$", **kwargs)
 
 def plot_grid(imgs, display=True, method="min-max", nrows=None, title=None,
-              **kwargs):
+              filename=None, **kwargs):
     defaults = dict(dpi=160, figsize=(8, 4), title_fontsize=8, title_y=1.01)
     kwargs = {k: kwargs.get(k, defaults.get(k, None)) for k
               in defaults.keys() | kwargs.keys()}
@@ -169,6 +170,11 @@ def plot_grid(imgs, display=True, method="min-max", nrows=None, title=None,
     ax.set_title(fontsize=kwargs.get("title_fontsize", None), label=title,
                  y=kwargs.get("title_y", None))
     remove_ticks(ax)
+
+    if filename:
+        path = pathlib.Path(filename)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        plt.savefig(filename, bbox_inches="tight")
     if display:
         plt.show()
     else:
