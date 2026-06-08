@@ -402,12 +402,14 @@ class AdaptiveParticleTracer(ParticleTracer):
                       if site["type"] == "sample" and name not in graph_state
             })
             graph_state.update({
-                name: (site["value"], 0., 0., False)
+                name: (site["value"], jnp.zeros(site["value"].shape[:1]),
+                       jnp.zeros(site["value"].shape[:1]), False)
                 for name, site in model_trace.items()
                 if site["type"] == "deterministic"
             })
             graph_state.update({
-                name: (site["value"], 0., 0., False)
+                name: (site["value"], jnp.zeros(site["value"].shape[:1]),
+                       jnp.zeros(site["value"].shape[:1]), False)
                 for name, site in guide_trace.items()
                 if site["type"] == "deterministic"
             })
@@ -419,7 +421,15 @@ class AdaptiveParticleTracer(ParticleTracer):
         rng_keys = random.split(rng_key, self.num_particles)
         particles = jnp.arange(self.num_particles)
         particle_traces = jax.vmap(single_trace)
-        return particle_traces(rng_keys, particle_params, particle=particles)
+        traces, mutables = particle_traces(rng_keys, particle_params,
+                                           particle=particles)
+        for k, v in traces.items():
+            entries = tuple(jnp.broadcast_to(entry[..., jnp.newaxis],
+                                             v[0].shape[:2])
+                            if entry.shape[:2] != v[0].shape[:2] else entry
+                            for entry in v[1:])
+            traces[k] = v[:1] + entries
+        return traces, mutables
 
 class AdaptiveElboTracer(AdaptiveParticleTracer, ELBOTracer):
     pass
