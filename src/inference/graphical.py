@@ -94,12 +94,14 @@ class ParticleTracer(ELBOMixin):
                       if site["type"] == "sample" and name not in graph_state
             })
             graph_state.update({
-                name: (site["value"], 0., 0., False)
+                name: (site["value"], jnp.zeros(site["value"].shape[:1]),
+                       jnp.zeros(site["value"].shape[:1]), False)
                 for name, site in model_trace.items()
                 if site["type"] == "deterministic"
             })
             graph_state.update({
-                name: (site["value"], 0., 0., False)
+                name: (site["value"], jnp.zeros(site["value"].shape[:1]),
+                       jnp.zeros(site["value"].shape[:1]), False)
                 for name, site in guide_trace.items()
                 if site["type"] == "deterministic"
             })
@@ -111,7 +113,15 @@ class ParticleTracer(ELBOMixin):
         rng_keys = random.split(rng_key, self.num_particles)
         particles = jnp.arange(self.num_particles)
         particle_traces = jax.vmap(single_trace)
-        return particle_traces(rng_keys, particle_params, particle=particles)
+        traces, mutables = particle_traces(rng_keys, particle_params,
+                                           particle=particles)
+        for k, v in traces.items():
+            entries = tuple(jnp.broadcast_to(entry[..., jnp.newaxis],
+                                             v[0].shape[:2])
+                            if entry.shape[:2] != v[0].shape[:2] else entry
+                            for entry in v[1:])
+            traces[k] = v[:1] + entries
+        return traces, mutables
 
     def guided_log_weights(self, rng_key, param_map, particle_params, model,
                            guide, *args, **kwargs):
@@ -150,10 +160,6 @@ class ParticleTracer(ELBOMixin):
 
     def loss(self, *args, **kwargs):
         traces, mutables = self(*args, **kwargs)
-        for k, v in traces.items():
-            is_observed = jnp.broadcast_to(jnp.expand_dims(v[-1], axis=-1),
-                                           v[0].shape[:2])
-            traces[k] = v[:-1] + (is_observed,)
         log_ws = self.log_weights(traces, mutables)
         return self.loss_fn(log_ws, traces), {"log_w": log_ws.sum(axis=-1),
                                               "mutables": mutables,
