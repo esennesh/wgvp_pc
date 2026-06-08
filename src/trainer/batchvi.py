@@ -248,8 +248,11 @@ class BatchVariationalPara(GraphicalImportancePara):
         self._global_buffers = {k: v for k, v in state["mutables"].items()
                                 if k not in local_buffers}
 
-        result = {"loss": loss}
-        result.update(**{k: v for k, v in state.items()
+        kl = sum(~node[3] * (node[2] - node[1]) for node
+                 in state["trace"].values())
+        nll = -sum(node[3] * node[1] for node in state["trace"].values())
+        result = {"loss": loss, "kl": kl.mean(), "nll": nll.mean()}
+        result.update(**{k: v.mean() for k, v in state.items()
                          if isinstance(v, jax.Array)})
         return result
 
