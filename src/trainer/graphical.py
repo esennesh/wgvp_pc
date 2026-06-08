@@ -224,14 +224,22 @@ class GraphicalImportancePara(ParaMonad):
     def test_step(self, data, *args, **kwargs):
         loss, self._rng, state = self._evaluate(data, self.parameters, self.rng)
         self._buffer_state.update(state["mutables"])
-        return {"loss": loss, "log_w": state["log_w"]}
+        nll = -sum(node[3] * node[1] for node in state["trace"].values())
+        kl = sum(~node[3] * (node[2] - node[1]) for node
+                 in state["trace"].values())
+        return {"kl": kl.mean(), "loss": loss, "log_w": state["log_w"].mean(),
+                "nll": nll.mean()}
 
     def train_step(self, data, *args, **kwargs):
         loss, self.optim_state, self._rng, state = self._update(
             data, self.optim_state, self.rng
         )
         self._buffer_state.update(state["mutables"])
-        return {"loss": loss, "log_w": state["log_w"]}
+        nll = -sum(node[3] * node[1] for node in state["trace"].values())
+        kl = sum(~node[3] * (node[2] - node[1]) for node
+                 in state["trace"].values())
+        return {"kl": kl.mean(), "loss": loss, "log_w": state["log_w"].mean(),
+                "nll": nll.mean()}
 
     def validate(self, epoch: int, loss: float):
         if self.scheduler and isinstance(self.scheduler,
@@ -247,4 +255,8 @@ class GraphicalImportancePara(ParaMonad):
     def valid_step(self, data, *args, **kwargs):
         loss, self._rng, state = self._evaluate(data, self.parameters, self.rng)
         self._buffer_state.update(state["mutables"])
-        return {"loss": loss, "log_w": state["log_w"]}
+        nll = -sum(node[3] * node[1] for node in state["trace"].values())
+        kl = sum(~node[3] * (node[2] - node[1]) for node
+                 in state["trace"].values())
+        return {"kl": kl.mean(), "loss": loss, "log_w": state["log_w"].mean(),
+                "nll": nll.mean()}
