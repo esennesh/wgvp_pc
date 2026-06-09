@@ -2,7 +2,7 @@ _target_: src.trainer.Trainer
 
 default_root_dir: ${paths.output_dir}
 
-metrics: ["nll", "kl", "log_w"]
+metrics: ["nll", "kl", "log_w", "log_Z"]
 min_epochs: 1 # prevents early stopping
 epochs: 500
 

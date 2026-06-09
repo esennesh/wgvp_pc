@@ -227,8 +227,9 @@ class GraphicalImportancePara(ParaMonad):
         nll = -sum(node[3] * node[1] for node in state["trace"].values())
         kl = sum(~node[3] * (node[2] - node[1]) for node
                  in state["trace"].values())
+        log_Z = jax.nn.log_softmax(state["log_w"], axis=0)
         return {"kl": kl.mean(), "loss": loss, "log_w": state["log_w"].mean(),
-                "nll": nll.mean()}
+                "log_Z": log_Z.sum(), "nll": nll.mean()}
 
     def train_step(self, data, *args, **kwargs):
         loss, self.optim_state, self._rng, state = self._update(
@@ -238,8 +239,9 @@ class GraphicalImportancePara(ParaMonad):
         nll = -sum(node[3] * node[1] for node in state["trace"].values())
         kl = sum(~node[3] * (node[2] - node[1]) for node
                  in state["trace"].values())
+        log_Z = jax.nn.log_softmax(state["log_w"], axis=0)
         return {"kl": kl.mean(), "loss": loss, "log_w": state["log_w"].mean(),
-                "nll": nll.mean()}
+                "log_Z": log_Z.sum(), "nll": nll.mean()}
 
     def validate(self, epoch: int, loss: float):
         if self.scheduler and isinstance(self.scheduler,
@@ -258,5 +260,6 @@ class GraphicalImportancePara(ParaMonad):
         nll = -sum(node[3] * node[1] for node in state["trace"].values())
         kl = sum(~node[3] * (node[2] - node[1]) for node
                  in state["trace"].values())
+        log_Z = jax.nn.log_softmax(state["log_w"], axis=0)
         return {"kl": kl.mean(), "loss": loss, "log_w": state["log_w"].mean(),
-                "nll": nll.mean()}
+                "log_Z": log_Z.sum(), "nll": nll.mean()}
