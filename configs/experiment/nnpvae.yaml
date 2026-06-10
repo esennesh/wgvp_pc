@@ -3,19 +3,25 @@
 defaults:
   - override /guide: pvae
   - override /model: nnpvae
+  - override /monad/optim: clipped_schedule_free_adamw
 
 monad:
   optim:
-    _target_: optax.contrib.schedule_free_adamw
-    learning_rate: 2e-3
+    transform2:
+      inner:
+        learning_rate: 2e-3
   scheduler:
     _target_: optax.contrib.reduce_on_plateau
     accumulation_size: 1
-    cooldown: 20
+    cooldown: 100
     factor: 0.5
     min_scale: 0.025
-    patience: 5
+    patience: 50
     rtol: 1e-4
   tracer:
-    _target_: src.inference.graphical.ELBOTracer
+    _target_: src.inference.graphical.DoubleCVTracer
     num_particles: 8
+
+trainer:
+  epochs: 500
+  save_period: 500
