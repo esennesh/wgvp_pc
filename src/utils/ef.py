@@ -32,6 +32,10 @@ class ExponentialFamily(dist.Distribution):
 
         @log_prob.defjvp
         def _natural_jvp(primals, tangents) -> Tuple[ArrayLike, ArrayLike]:
+            # custom_jvp installs the JVP  eta_dot |-> J_nat @ eta_dot; jax.grad
+            # uses its transpose -- the VJP returning the NATURAL gradient.
+            # J_nat is the expectation-parameter Jacobian d logp/d mu reassigned
+            # to the natural-parameter slot (docs/pgsvi_natural_gradient.tex).
             np, value = primals
             np_dot, value_dot = tangents
 
@@ -47,7 +51,7 @@ class ExponentialFamily(dist.Distribution):
 
     @property
     def mean(self) -> ArrayLike:
-        return self._to_pyro.mean
+        return self._to_pyro().mean
 
     def natural_score(self, value: ArrayLike, score_value=False) -> ArrayLike:
         ep = self.np.to_exp()
