@@ -304,7 +304,9 @@ class PVaePrior(nnx.Module):
         self.log_rate = nnx.Param(rngs.uniform(shape=(z_dim,), minval=-6.,
                                                maxval=-4.))
 
-    def __call__(self, rngs=None):
+    def __call__(self, natural=False, rngs=None):
+        if natural:
+            return self.log_rate.value
         return jnp.exp(self.log_rate)
 
 def pvae_model(xs, decoder: Union[nnx.Linear, NMFDecoder], prior: PVaePrior,
