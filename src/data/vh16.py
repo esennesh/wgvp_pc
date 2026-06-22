@@ -61,7 +61,7 @@ def make_dataset(dataset: str, load_dir: str='data', **kwargs):
             dataset,
             kwargs['file_name'],
         )
-        data = np.load(data)
+        data = np.load(data, allow_pickle=True)
 
         if kwargs['shift_rescale']:
             mu = np.nanmean(data)
